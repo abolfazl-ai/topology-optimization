@@ -8,7 +8,7 @@ from stiffness import q4_k_matrix, assemble
 
 
 def main(length, width, n_elx, n_ely, vol_frac, penalty):
-    bc = create_load_bc(length, width, m=n_elx)  # Creating load boundary condition
+    bc = create_load_bc(m=n_elx, n=n_ely)  # Creating load boundary condition
     nodes, elements = mesh(length, width, n_elx, n_ely, bc)
     dof = {num: len(single_node.displacement) for num, single_node in nodes.items()}
     diff = {m: sum(dof[i] for i in range(1, m)) for m in nodes}
@@ -21,7 +21,7 @@ def main(length, width, n_elx, n_ely, vol_frac, penalty):
     while change > 0.01:
         loop += 1
         x_old = x.copy()
-        U = fem(nodes, elements, KE, x, penalty, dof, diff)
+        U = fem(nodes, elements, KE, x, penalty, dof, diff, loop == 1)
         c, dc = 0.0, np.zeros(elements.shape)
         for i in range(elements.shape[1]):
             for j in range(elements.shape[0]):
@@ -41,7 +41,7 @@ def main(length, width, n_elx, n_ely, vol_frac, penalty):
             plt.show()
 
 
-def fem(nodes, elements, KE, x, penalty, dof, diff):
+def fem(nodes, elements, KE, x, penalty, dof, diff, show_result=False):
     U, F = np.zeros(sum(dof.values())), np.zeros(sum(dof.values()))
     for node in nodes:
         U[diff[node]:diff[node] + dof[node]] = nodes[node].displacement
@@ -54,7 +54,8 @@ def fem(nodes, elements, KE, x, penalty, dof, diff):
 
     K = assemble(elements, local_k, dof)  # Assembling the global stiffness matrix
     U = apply_bc(K, U, F)  # Applying boundary conditions
-    # plot_output(nodes, elements, U)
+    if show_result:
+        plot_output(nodes, elements, U)
     return U
 
 

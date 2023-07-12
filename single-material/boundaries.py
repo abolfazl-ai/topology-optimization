@@ -1,15 +1,20 @@
 import numpy as np
+import pandas as pd
 import scipy.sparse.linalg as spla
 
 
-def create_load_bc(length, width, m):
-    # x_values = np.linspace(0, length, m + 1)
-    # fix_y_value, load_y_values = 0, width
-    # bc = {(x, fix_y_value): ((0, 0), (np.nan, np.nan)) for x in x_values}
-    # load = {(x, load_y_values): ((np.nan, np.nan), (0, -1 / (m + 1))) for x in x_values}
-    bc = {(0, 0): ((0, 0), (np.nan, np.nan)), (1, 0): ((0, 0), (np.nan, np.nan))}
-    load = {(0.2, 1): ((np.nan, np.nan), (0, -1)), (0.8, 1): ((np.nan, np.nan), (0, -1))}
-    return bc | load
+def create_load_bc(m, n, input_path='bc-load.xlsx'):
+    bc_df = pd.read_excel(input_path, sheet_name='BC')
+    bc = dict()
+    for index, row in bc_df.iterrows():
+        sx, sy, ex, ey = row['StartX'], row['StartY'], row['EndX'], row['EndY']
+        if sx == ex and sy == ey:
+            bc[(sx, sy)] = ((row['DisplacementX'], row['DisplacementY']), (row['ForceX'], row['ForceY']))
+        else:
+            for x in np.linspace(sx, ex, int(max(1, (ex - sx) * (m + 1)))):
+                for y in np.linspace(sy, ey, int(max(1, (ey - sy) * (n + 1)))):
+                    bc[(x, y)] = ((row['DisplacementX'], row['DisplacementY']), (row['ForceX'], row['ForceY']))
+    return bc
 
 
 def apply_bc(stiffness, displacement, forces):

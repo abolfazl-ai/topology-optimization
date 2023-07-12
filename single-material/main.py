@@ -1,13 +1,13 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-from NewCode.plot_results import plot_output
+from plot_results import plot_output
 from boundaries import apply_bc, create_load_bc
 from mesh import mesh
 from stiffness import q4_k_matrix, assemble
 
 
-def main(length, width, n_elx, n_ely, vol_frac, penalty, r_min):
+def main(length, width, n_elx, n_ely, vol_frac, penalty):
     bc = create_load_bc(length, width, m=n_elx)  # Creating load boundary condition
     nodes, elements = mesh(length, width, n_elx, n_ely, bc)
     dof = {num: len(single_node.displacement) for num, single_node in nodes.items()}
@@ -72,4 +72,4 @@ def oc(n_elx, n_ely, vol_frac, x, dc):
     return x_new
 
 
-main(1, 1, 50, 50, 0.3, 3, 1)
+main(1, 1, 50, 50, 0.3, 3)

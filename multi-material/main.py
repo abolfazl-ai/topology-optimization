@@ -44,7 +44,7 @@ def main(length, width, n_elx, n_ely, X0, r_min, vol_frac, cost_frac, penalty, M
         ce = (np.dot(Un[e_dof].reshape(n_elx * n_ely, 8), KE) * Un[e_dof].reshape(n_elx * n_ely, 8)).sum(1)
         dc = (-dE_.flatten() * ce).reshape(x.shape)
 
-        # dc = check(n_elx, n_ely, r_min, x, dc)
+        dc = check(n_elx, n_ely, r_min, x, dc)
         x = oc(n_elx, n_ely, vol_frac, x, cost_frac, dc, P_, dP_, loop, MinMove)
         change = np.max(abs(x - x_old))
 
@@ -59,7 +59,7 @@ def main(length, width, n_elx, n_ely, X0, r_min, vol_frac, cost_frac, penalty, M
 
 
 def fem(iK, jK, KE, U, F, E_int, penalty, dof):
-    elem_k = ((KE.flatten()[np.newaxis]).T * (E_int.flatten() ** penalty)).flatten(order='F')
+    elem_k = ((KE.flatten()[np.newaxis]).T * E_int.flatten()).flatten(order='F')
     K = coo_matrix((elem_k, (iK, jK)), shape=(dof, dof)).tocsc()
     U = apply_bc(K, U, F)
     return U
@@ -82,7 +82,7 @@ def ordered_simp_interpolation(n_elx, n_ely, x, penal, X, Y):
 
 
 def check(n_elx, n_ely, r_min, x, dc):
-    dcn = np.zeros(x.shape)
+    dcn = np.zeros(dc.shape)
     for i in range(n_elx):
         for j in range(n_ely):
             s = 0.0
@@ -90,8 +90,8 @@ def check(n_elx, n_ely, r_min, x, dc):
                 for l in range(max(j - int(np.floor(r_min)), 0), min(j + int(np.ceil(r_min)), n_ely)):
                     fac = r_min - np.sqrt((i - k) ** 2 + (j - l) ** 2)
                     s += max(0, fac)
-                    dcn[j, i] += max(0, fac) * x[l, k] * dc[l, k]
-            dcn[j, i] /= x[j, i] * s
+                    dcn[i, j] += max(0, fac) * x[k, l] * dc[k, l]
+            dcn[i, j] /= x[i, j] * s
     return dcn
 
 

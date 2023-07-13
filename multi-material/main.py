@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import matplotlib as mpl
 from matplotlib.colors import LinearSegmentedColormap
 from scipy.sparse import coo_matrix
-from utils import mesh, apply_bc, get_bc_load, get_materials
+from utils import mesh, apply_bc, get_bc_load, get_materials, plot_output
 
 
 def main(length, width, n_elx, n_ely, X0, r_min, vol_frac, cost_frac, penalty, MinMove):
@@ -14,11 +14,11 @@ def main(length, width, n_elx, n_ely, X0, r_min, vol_frac, cost_frac, penalty, M
     levels = [D[0]] + [0.5 * (D[i] + D[i + 1]) for i in range(len(D) - 1)] + [D[-1]]
     bc = get_bc_load(m=n_elx, n=n_ely, input_path='material-bc-load2.xlsx')
 
-    nodes, elements = mesh(length, width, n_elx, n_ely, bc)
+    all_nodes, elements = mesh(length, width, n_elx, n_ely, bc)
     U, F = np.zeros(dof), np.zeros(dof)
-    for n in nodes:
-        U[2 * (n - 1):2 * (n - 1) + 2] = nodes[n].displacement
-        F[2 * (n - 1):2 * (n - 1) + 2] = nodes[n].force
+    for n in all_nodes:
+        U[2 * (n - 1):2 * (n - 1) + 2] = all_nodes[n].displacement
+        F[2 * (n - 1):2 * (n - 1) + 2] = all_nodes[n].force
 
     for ii in range(n_elx):
         for jj in range(n_ely):
@@ -48,9 +48,9 @@ def main(length, width, n_elx, n_ely, X0, r_min, vol_frac, cost_frac, penalty, M
         x = oc(n_elx, n_ely, vol_frac, x, cost_frac, dc, P_, dP_, loop, MinMove)
         change = np.max(abs(x - x_old))
 
-        print(F'Iteration: {loop}, Change: {change}')
         cs = plt.contourf(x.T, levels=levels, colors=M_color)
         proxy = [plt.Rectangle((0, 0), 1, 1, fc=pc.get_facecolor()[0]) for pc in cs.collections]
+        plt.title(F'Iteration: {loop}, Change: {change:0.4f}')
         plt.legend(proxy, M_name)
         plt.pause(1E-6)
 

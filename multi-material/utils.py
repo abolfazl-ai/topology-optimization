@@ -69,15 +69,15 @@ def plot_output(nodes, elements, d, exaggeration=0):
         exaggeration = 0.1 / max(abs(d))
 
     fig, ax = plt.subplots()
-
     new_nodes = copy.deepcopy(nodes)
+
     for n, node in new_nodes.items():
         new_position = (node.position[0] + exaggeration * d[int(2 * (n - 1))],
                         node.position[1] + exaggeration * d[int(2 * (n - 1) + 1)])
         node.position = new_position
 
-    for i in range(elements.shape[1]):
-        for j in range(elements.shape[0]):
+    for i in range(elements.shape[0]):
+        for j in range(elements.shape[1]):
             new_node_positions = [new_nodes[node].position for node in elements[i, j].nodes]
             old_node_positions = [nodes[node].position for node in elements[i, j].nodes]
             ax.plot(*zip(*old_node_positions, old_node_positions[0]), color='blue', zorder=1)

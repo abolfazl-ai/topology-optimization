@@ -1,10 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
-
-from plot_results import plot_output
-from boundaries import apply_bc, create_load_bc
-from mesh import mesh
-from stiffness import q4_k_matrix, assemble
+from scipy.sparse import coo_matrix
+from utils import mesh, apply_bc, create_load_bc
 
 
 def main(length, width, n_elx, n_ely, vol_frac, penalty):
@@ -12,8 +9,21 @@ def main(length, width, n_elx, n_ely, vol_frac, penalty):
     nodes, elements = mesh(length, width, n_elx, n_ely, bc)
     dof = {num: len(single_node.displacement) for num, single_node in nodes.items()}
     diff = {m: sum(dof[i] for i in range(1, m)) for m in nodes}
+    U, F = np.zeros(sum(dof.values())), np.zeros(sum(dof.values()))
+    for node in nodes:
+        U[diff[node]:diff[node] + dof[node]] = nodes[node].displacement
+        F[diff[node]:diff[node] + dof[node]] = nodes[node].force
 
-    KE = q4_k_matrix(elements[0, 0], nodes)
+    e_dof_mat = np.zeros((n_elx * n_ely, 8), dtype=int)
+    for ii in range(n_elx):
+        for jj in range(n_ely):
+            el = jj + ii * n_ely
+            nodes = elements[ii, jj].nodes
+            e_dof_mat[el, :] = 2 * (np.repeat(nodes, 2) - 1) + np.repeat([[0, 1]], 4, axis=0).flatten()
+    iK = np.kron(e_dof_mat, np.ones((8, 1))).flatten()
+    jK = np.kron(e_dof_mat, np.ones((1, 8))).flatten()
+
+    KE = element_stiffness()
     x = vol_frac * np.ones(elements.shape)
 
     loop = 0
@@ -21,13 +31,9 @@ def main(length, width, n_elx, n_ely, vol_frac, penalty):
     while change > 0.01:
         loop += 1
         x_old = x.copy()
-        U = fem(nodes, elements, KE, x, penalty, dof, diff, loop == 1)
-        c, dc = 0.0, np.zeros(elements.shape)
-        for i in range(elements.shape[1]):
-            for j in range(elements.shape[0]):
-                Ue = elements[i, j].get_primary_variables(U, diff)
-                c += (x[i, j] ** penalty) * ((Ue.T @ KE) @ Ue)
-                dc[i, j] = -penalty * (x[i, j] ** (penalty - 1)) * ((Ue.T @ KE) @ Ue)
+        Un = fem(iK, jK, KE, U, F, x, penalty, 2 * (n_elx + 1) * (n_ely + 1))
+        ce = (np.dot(Un[e_dof_mat].reshape(n_elx * n_ely, 8), KE) * Un[e_dof_mat].reshape(n_elx * n_ely, 8)).sum(1)
+        dc = ((-penalty * x.flatten() ** (penalty - 1)) * ce).reshape(x.shape)
 
         x = oc(n_elx, n_ely, vol_frac, x, dc)
         change = np.max(abs(x - x_old))
@@ -41,21 +47,10 @@ def main(length, width, n_elx, n_ely, vol_frac, penalty):
             plt.show()
 
 
-def fem(nodes, elements, KE, x, penalty, dof, diff, show_result=False):
-    U, F = np.zeros(sum(dof.values())), np.zeros(sum(dof.values()))
-    for node in nodes:
-        U[diff[node]:diff[node] + dof[node]] = nodes[node].displacement
-        F[diff[node]:diff[node] + dof[node]] = nodes[node].force
-
-    local_k = np.empty(elements.shape, dtype=object)
-    for i in range(elements.shape[1]):
-        for j in range(elements.shape[0]):
-            local_k[i, j] = (x[i, j] ** penalty) * KE
-
-    K = assemble(elements, local_k, dof)  # Assembling the global stiffness matrix
-    U = apply_bc(K, U, F)  # Applying boundary conditions
-    if show_result:
-        plot_output(nodes, elements, U)
+def fem(iK, jK, KE, U, F, x, penalty, dof):
+    elem_k = ((KE.flatten()[np.newaxis]).T * (x.flatten() ** penalty)).flatten(order='F')
+    K = coo_matrix((elem_k, (iK, jK)), shape=(dof, dof)).tocsc()
+    U = apply_bc(K, U, F)
     return U
 
 
@@ -65,7 +60,9 @@ def oc(n_elx, n_ely, vol_frac, x, dc):
     while (l2 - l1) / (l1 + l2) > 1e-3:
         l_mid = 0.5 * (l2 + l1)
         x_new[:] = np.maximum(0.001, np.maximum(x - move,
-                                                np.minimum(1.0, np.minimum(x + move, x * np.sqrt(-dc / l_mid)))))
+                                                np.minimum(1.0,
+                                                           np.minimum(x + move,
+                                                                      x * np.sqrt(-dc / l_mid)))))
         if np.concatenate(x_new).sum() - vol_frac * n_elx * n_ely > 0:
             l1 = l_mid
         else:
@@ -73,4 +70,19 @@ def oc(n_elx, n_ely, vol_frac, x, dc):
     return x_new
 
 
-main(1, 1, 50, 50, 0.3, 3)
+def element_stiffness(E=1, nu=0.3):
+    k = np.array([1 / 2 - nu / 6, 1 / 8 + nu / 8, -1 / 4 - nu / 12,
+                  -1 / 8 + 3 * nu / 8, -1 / 4 + nu / 12, -1 / 8 - nu / 8,
+                  nu / 6, 1 / 8 - 3 * nu / 8])
+    KE = E / (1 - nu ** 2) * np.array([[k[0], k[1], k[2], k[3], k[4], k[5], k[6], k[7]],
+                                       [k[1], k[0], k[7], k[6], k[5], k[4], k[3], k[2]],
+                                       [k[2], k[7], k[0], k[5], k[6], k[3], k[4], k[1]],
+                                       [k[3], k[6], k[5], k[0], k[7], k[2], k[1], k[4]],
+                                       [k[4], k[5], k[6], k[7], k[0], k[1], k[2], k[3]],
+                                       [k[5], k[4], k[3], k[2], k[1], k[0], k[7], k[6]],
+                                       [k[6], k[3], k[4], k[1], k[2], k[7], k[0], k[5]],
+                                       [k[7], k[2], k[1], k[4], k[3], k[6], k[5], k[0]]]);
+    return KE
+
+
+main(1, 1, 100, 100, 0.3, 3)

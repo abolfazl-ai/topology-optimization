@@ -1,5 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib as mpl
+from matplotlib.colors import LinearSegmentedColormap
 from scipy.sparse import coo_matrix
 from utils import mesh, apply_bc, get_bc_load, get_materials
 
@@ -7,9 +9,10 @@ from utils import mesh, apply_bc, get_bc_load, get_materials
 def main(length, width, n_elx, n_ely, X0, r_min, vol_frac, cost_frac, penalty, MinMove):
     dof = 2 * (n_elx + 1) * (n_ely + 1)
     e_dof = np.zeros((n_elx * n_ely, 8), dtype=int)
-    
+
     D, E, P, nu, M_name, M_color = get_materials()
-    bc = get_bc_load(m=n_elx, n=n_ely)
+    levels = [D[0]] + [0.5 * (D[i] + D[i + 1]) for i in range(len(D) - 1)] + [D[-1]]
+    bc = get_bc_load(m=n_elx, n=n_ely, input_path='material-bc-load2.xlsx')
 
     nodes, elements = mesh(length, width, n_elx, n_ely, bc)
     U, F = np.zeros(dof), np.zeros(dof)
@@ -41,11 +44,14 @@ def main(length, width, n_elx, n_ely, X0, r_min, vol_frac, cost_frac, penalty, M
         ce = (np.dot(Un[e_dof].reshape(n_elx * n_ely, 8), KE) * Un[e_dof].reshape(n_elx * n_ely, 8)).sum(1)
         dc = (-dE_.flatten() * ce).reshape(x.shape)
 
-        x = oc2(n_elx, n_ely, vol_frac, x, cost_frac, dc, P_, dP_, loop, MinMove)
+        # dc = check(n_elx, n_ely, r_min, x, dc)
+        x = oc(n_elx, n_ely, vol_frac, x, cost_frac, dc, P_, dP_, loop, MinMove)
         change = np.max(abs(x - x_old))
 
         print(F'Iteration: {loop}, Change: {change}')
-        plt.imshow(-x.T, cmap='gray', vmin=-1, vmax=0, origin='lower')
+        cs = plt.contourf(x.T, levels=levels, colors=M_color)
+        proxy = [plt.Rectangle((0, 0), 1, 1, fc=pc.get_facecolor()[0]) for pc in cs.collections]
+        plt.legend(proxy, M_name)
         plt.pause(1E-6)
 
     print('Model converged')
@@ -60,11 +66,11 @@ def fem(iK, jK, KE, U, F, E_int, penalty, dof):
 
 
 def ordered_simp_interpolation(n_elx, n_ely, x, penal, X, Y):
-    y = np.zeros((n_ely, n_elx))
-    dy = np.zeros((n_ely, n_elx))
+    y = np.zeros(x.shape)
+    dy = np.zeros(x.shape)
 
-    for i in range(n_elx):
-        for j in range(n_ely):
+    for i in range(n_ely):
+        for j in range(n_elx):
             for k in range(len(X) - 1):
                 if (X[k] < x[j, i]) and (X[k + 1] >= x[j, i]):
                     A = (Y[k] - Y[k + 1]) / (X[k] ** (1 * penal) - X[k + 1] ** (1 * penal))
@@ -75,23 +81,21 @@ def ordered_simp_interpolation(n_elx, n_ely, x, penal, X, Y):
     return y, dy
 
 
-def oc(n_elx, n_ely, vol_frac, x, dc):
-    l1, l2, move = 0, 100000, 0.2
-    x_new = np.zeros(x.shape)
-    while (l2 - l1) / (l1 + l2) > 1e-3:
-        l_mid = 0.5 * (l2 + l1)
-        x_new[:] = np.maximum(0.001, np.maximum(x - move,
-                                                np.minimum(1.0,
-                                                           np.minimum(x + move,
-                                                                      x * np.sqrt(-dc / l_mid)))))
-        if np.concatenate(x_new).sum() - vol_frac * n_elx * n_ely > 0:
-            l1 = l_mid
-        else:
-            l2 = l_mid
-    return x_new
+def check(n_elx, n_ely, r_min, x, dc):
+    dcn = np.zeros(x.shape)
+    for i in range(n_elx):
+        for j in range(n_ely):
+            s = 0.0
+            for k in range(max(i - int(np.floor(r_min)), 0), min(i + int(np.ceil(r_min)), n_elx)):
+                for l in range(max(j - int(np.floor(r_min)), 0), min(j + int(np.ceil(r_min)), n_ely)):
+                    fac = r_min - np.sqrt((i - k) ** 2 + (j - l) ** 2)
+                    s += max(0, fac)
+                    dcn[j, i] += max(0, fac) * x[l, k] * dc[l, k]
+            dcn[j, i] /= x[j, i] * s
+    return dcn
 
 
-def oc2(n_elx, n_ely, vol_frac, x, cost_frac, dc, P_, dP_, loop, MinMove):
+def oc(n_elx, n_ely, vol_frac, x, cost_frac, dc, P_, dP_, loop, MinMove):
     Temp = -dc / (P_ + x * dP_)
     lV1, lV2, lP1, lP2 = 0.0, 2 * np.max(-dc), 0.0, 2 * np.max(Temp)
     move = max(0.15 * 0.96 ** loop, MinMove)
@@ -118,18 +122,12 @@ def oc2(n_elx, n_ely, vol_frac, x, cost_frac, dc, P_, dP_, loop, MinMove):
 
 
 def element_stiffness(E=1, nu=0.3):
-    k = np.array([1 / 2 - nu / 6, 1 / 8 + nu / 8, -1 / 4 - nu / 12,
-                  -1 / 8 + 3 * nu / 8, -1 / 4 + nu / 12, -1 / 8 - nu / 8,
-                  nu / 6, 1 / 8 - 3 * nu / 8])
-    KE = E / (1 - nu ** 2) * np.array([[k[0], k[1], k[2], k[3], k[4], k[5], k[6], k[7]],
-                                       [k[1], k[0], k[7], k[6], k[5], k[4], k[3], k[2]],
-                                       [k[2], k[7], k[0], k[5], k[6], k[3], k[4], k[1]],
-                                       [k[3], k[6], k[5], k[0], k[7], k[2], k[1], k[4]],
-                                       [k[4], k[5], k[6], k[7], k[0], k[1], k[2], k[3]],
-                                       [k[5], k[4], k[3], k[2], k[1], k[0], k[7], k[6]],
-                                       [k[6], k[3], k[4], k[1], k[2], k[7], k[0], k[5]],
-                                       [k[7], k[2], k[1], k[4], k[3], k[6], k[5], k[0]]])
+    A11 = np.array([[12, 3, -6, -3], [3, 12, 3, 0], [-6, 3, 12, -3], [-3, 0, -3, 12]])
+    A12 = np.array([[-6, -3, 0, 3], [-3, -6, -3, -6], [0, -3, -6, 3], [3, -6, 3, -6]])
+    B11 = np.array([[-4, 3, -2, 9], [3, -4, -9, 4], [-2, -9, -4, -3], [9, 4, -3, -4]])
+    B12 = np.array([[2, -3, 4, -9], [-3, 2, 9, -2], [4, 9, 2, 3], [-9, -2, 3, 2]])
+    KE = E / (1 - nu ** 2) / 24 * (np.block([[A11, A12], [A12.T, A11]]) + nu * np.block([[B11, B12], [B12.T, B11]]))
     return KE
 
 
-main(1, 1, 100, 100, 0.5, 2.5, 0.3, 0.4, 3, 0.001)
+main(1, 1, 100, 50, 0.5, 2.5, 0.3, 0.4, 3, 0.001)

@@ -5,46 +5,45 @@ from utils import mesh, apply_bc, create_load_bc
 
 
 def main(length, width, n_elx, n_ely, vol_frac, penalty):
-    bc = create_load_bc(m=n_elx, n=n_ely)  # Creating load boundary condition
-    nodes, elements = mesh(length, width, n_elx, n_ely, bc)
-    dof = {num: len(single_node.displacement) for num, single_node in nodes.items()}
-    diff = {m: sum(dof[i] for i in range(1, m)) for m in nodes}
-    U, F = np.zeros(sum(dof.values())), np.zeros(sum(dof.values()))
-    for node in nodes:
-        U[diff[node]:diff[node] + dof[node]] = nodes[node].displacement
-        F[diff[node]:diff[node] + dof[node]] = nodes[node].force
+    dof = 2 * (n_elx + 1) * (n_ely + 1)
+    e_dof = np.zeros((n_elx * n_ely, 8), dtype=int)
 
-    e_dof_mat = np.zeros((n_elx * n_ely, 8), dtype=int)
+    bc = create_load_bc(m=n_elx, n=n_ely)
+    nodes, elements = mesh(length, width, n_elx, n_ely, bc)
+    U, F = np.zeros(dof), np.zeros(dof)
+    for n in nodes:
+        U[2 * (n - 1):2 * (n - 1) + 2] = nodes[n].displacement
+        F[2 * (n - 1):2 * (n - 1) + 2] = nodes[n].force
+
     for ii in range(n_elx):
         for jj in range(n_ely):
             el = jj + ii * n_ely
             nodes = elements[ii, jj].nodes
-            e_dof_mat[el, :] = 2 * (np.repeat(nodes, 2) - 1) + np.repeat([[0, 1]], 4, axis=0).flatten()
-    iK = np.kron(e_dof_mat, np.ones((8, 1))).flatten()
-    jK = np.kron(e_dof_mat, np.ones((1, 8))).flatten()
+            e_dof[el, :] = 2 * (np.repeat(nodes, 2) - 1) + np.repeat([[0, 1]], 4, axis=0).flatten()
+    iK = np.kron(e_dof, np.ones((8, 1))).flatten()
+    jK = np.kron(e_dof, np.ones((1, 8))).flatten()
 
     KE = element_stiffness()
     x = vol_frac * np.ones(elements.shape)
 
-    loop = 0
-    change = 1
-    while change > 0.01:
+    plt.ion()
+    loop, change = 0, 1
+    while change > 0.001:
         loop += 1
         x_old = x.copy()
-        Un = fem(iK, jK, KE, U, F, x, penalty, 2 * (n_elx + 1) * (n_ely + 1))
-        ce = (np.dot(Un[e_dof_mat].reshape(n_elx * n_ely, 8), KE) * Un[e_dof_mat].reshape(n_elx * n_ely, 8)).sum(1)
+        Un = fem(iK, jK, KE, U, F, x, penalty, dof)
+        ce = (np.dot(Un[e_dof].reshape(n_elx * n_ely, 8), KE) * Un[e_dof].reshape(n_elx * n_ely, 8)).sum(1)
         dc = ((-penalty * x.flatten() ** (penalty - 1)) * ce).reshape(x.shape)
 
         x = oc(n_elx, n_ely, vol_frac, x, dc)
         change = np.max(abs(x - x_old))
-        plt.imshow(-x.T, cmap='gray', vmin=-1, vmax=0, origin='lower')
 
-        obj = (x ** penalty).sum()
-        print(f"it.: {loop} , obj.: {obj} , ch.: {change}")
-        if change > 0.01:
-            plt.pause(1E-6)
-        else:
-            plt.show()
+        print(F'Iteration: {loop}, Change: {change}')
+        plt.imshow(-x.T, cmap='gray', vmin=-1, vmax=0, origin='lower')
+        plt.pause(1E-6)
+
+    print('Model converged')
+    plt.pause(1E6)
 
 
 def fem(iK, jK, KE, U, F, x, penalty, dof):
@@ -81,7 +80,7 @@ def element_stiffness(E=1, nu=0.3):
                                        [k[4], k[5], k[6], k[7], k[0], k[1], k[2], k[3]],
                                        [k[5], k[4], k[3], k[2], k[1], k[0], k[7], k[6]],
                                        [k[6], k[3], k[4], k[1], k[2], k[7], k[0], k[5]],
-                                       [k[7], k[2], k[1], k[4], k[3], k[6], k[5], k[0]]]);
+                                       [k[7], k[2], k[1], k[4], k[3], k[6], k[5], k[0]]])
     return KE
 
 

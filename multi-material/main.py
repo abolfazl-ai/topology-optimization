@@ -1,14 +1,16 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.sparse import coo_matrix
-from utils import mesh, apply_bc, create_load_bc
+from utils import mesh, apply_bc, get_bc_load, get_materials
 
 
-def main(length, width, n_elx, n_ely, X0, r_min, vol_frac, cost_frac, penalty, D, E, P, MColor, MName, MinMove):
+def main(length, width, n_elx, n_ely, X0, r_min, vol_frac, cost_frac, penalty, MinMove):
     dof = 2 * (n_elx + 1) * (n_ely + 1)
     e_dof = np.zeros((n_elx * n_ely, 8), dtype=int)
+    
+    D, E, P, nu, M_name, M_color = get_materials()
+    bc = get_bc_load(m=n_elx, n=n_ely)
 
-    bc = create_load_bc(m=n_elx, n=n_ely)
     nodes, elements = mesh(length, width, n_elx, n_ely, bc)
     U, F = np.zeros(dof), np.zeros(dof)
     for n in nodes:
@@ -28,7 +30,7 @@ def main(length, width, n_elx, n_ely, X0, r_min, vol_frac, cost_frac, penalty, D
 
     plt.ion()
     loop, change = 0, 1
-    while change > 0.001:
+    while change > 0.01:
         loop += 1
         x_old = x.copy()
 
@@ -39,7 +41,7 @@ def main(length, width, n_elx, n_ely, X0, r_min, vol_frac, cost_frac, penalty, D
         ce = (np.dot(Un[e_dof].reshape(n_elx * n_ely, 8), KE) * Un[e_dof].reshape(n_elx * n_ely, 8)).sum(1)
         dc = (-dE_.flatten() * ce).reshape(x.shape)
 
-        x = oc(n_elx, n_ely, vol_frac, x, dc)
+        x = oc2(n_elx, n_ely, vol_frac, x, cost_frac, dc, P_, dP_, loop, MinMove)
         change = np.max(abs(x - x_old))
 
         print(F'Iteration: {loop}, Change: {change}')
@@ -89,6 +91,32 @@ def oc(n_elx, n_ely, vol_frac, x, dc):
     return x_new
 
 
+def oc2(n_elx, n_ely, vol_frac, x, cost_frac, dc, P_, dP_, loop, MinMove):
+    Temp = -dc / (P_ + x * dP_)
+    lV1, lV2, lP1, lP2 = 0.0, 2 * np.max(-dc), 0.0, 2 * np.max(Temp)
+    move = max(0.15 * 0.96 ** loop, MinMove)
+    x_new = np.zeros(x.shape)
+    while ((lV2 - lV1) / (lV1 + lV2) > 1e-6) or ((lP2 - lP1) / (lP1 + lP2) > 1e-6):
+        lmidV = 0.5 * (lV2 + lV1)
+        lmidP = 0.5 * (lP2 + lP1)
+        Temp = lmidV + lmidP * P_ + lmidP * x * dP_
+        Coef = -dc / Temp
+        Coef = np.abs(Coef)
+        x_new = np.maximum(10 ** -5, np.maximum(x - move, np.minimum(1., np.minimum(x + move, x * np.sqrt(Coef)))))
+        if np.sum(x_new) - vol_frac * n_elx * n_ely > 0:
+            lV1 = lmidV
+        else:
+            lV2 = lmidV
+
+        CurrentCostFrac = np.sum(x_new * P_) / (n_elx * n_ely)
+        if CurrentCostFrac - cost_frac > 0:
+            lP1 = lmidP
+        else:
+            lP2 = lmidP
+
+    return x_new
+
+
 def element_stiffness(E=1, nu=0.3):
     k = np.array([1 / 2 - nu / 6, 1 / 8 + nu / 8, -1 / 4 - nu / 12,
                   -1 / 8 + 3 * nu / 8, -1 / 4 + nu / 12, -1 / 8 - nu / 8,
@@ -104,10 +132,4 @@ def element_stiffness(E=1, nu=0.3):
     return KE
 
 
-D = [0, 0.4, 0.7, 1.0]
-E = [0, 0.2, 0.6, 1.0]
-P = [0, 0.5, 0.8, 1.0]
-MName = ['Void' 'A' 'B' 'C']
-MColor = ['w', 'b', 'r', 'k']
-main(1, 1, 200, 200, 0.5, 2.5, 0.3,
-     0.4, 3, D, E, P, MColor, MName, 0.001)
+main(1, 1, 100, 100, 0.5, 2.5, 0.3, 0.4, 3, 0.001)

@@ -31,7 +31,7 @@ def mesh(length, width, m, n, bc, E=1, v=0.3, t=0.02, stress_mode=0):
     return nodes, elements
 
 
-def create_load_bc(m, n, input_path='bc-load.xlsx'):
+def get_bc_load(m, n, input_path='bc-load.xlsx'):
     bc_df = pd.read_excel(input_path, sheet_name='BC')
     bc = dict()
     for index, row in bc_df.iterrows():

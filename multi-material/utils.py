@@ -31,7 +31,7 @@ def mesh(length, width, m, n, bc, E=1, v=0.3, t=0.02, stress_mode=0):
     return nodes, elements
 
 
-def create_load_bc(m, n, input_path='material-bc-load.xlsx'):
+def get_bc_load(m, n, input_path='material-bc-load.xlsx'):
     bc_df = pd.read_excel(input_path, sheet_name='BC')
     bc = dict()
     for index, row in bc_df.iterrows():
@@ -43,6 +43,17 @@ def create_load_bc(m, n, input_path='material-bc-load.xlsx'):
                 for y in np.linspace(sy, ey, int(max(1, (ey - sy) * (n + 1)))):
                     bc[(x, y)] = ((row['DisplacementX'], row['DisplacementY']), (row['ForceX'], row['ForceY']))
     return bc
+
+
+def get_materials(input_path='material-bc-load.xlsx'):
+    material_df = pd.read_excel(input_path, sheet_name='MATERIALS')
+    D = material_df['Density'].tolist()
+    E = material_df['Elasticity'].tolist()
+    P = material_df['Price'].tolist()
+    nu = material_df['Poisson'].tolist()
+    M_name = material_df['Material'].tolist()
+    M_color = material_df['Color'].tolist()
+    return D, E, P, nu, M_name, M_color
 
 
 def apply_bc(stiffness, displacement, forces):

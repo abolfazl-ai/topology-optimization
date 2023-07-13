@@ -1,14 +1,14 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.sparse import coo_matrix
-from utils import mesh, apply_bc, create_load_bc
+from utils import mesh, apply_bc, get_bc_load
 
 
 def main(length, width, n_elx, n_ely, vol_frac, penalty):
     dof = 2 * (n_elx + 1) * (n_ely + 1)
     e_dof = np.zeros((n_elx * n_ely, 8), dtype=int)
 
-    bc = create_load_bc(m=n_elx, n=n_ely)
+    bc = get_bc_load(m=n_elx, n=n_ely)
     nodes, elements = mesh(length, width, n_elx, n_ely, bc)
     U, F = np.zeros(dof), np.zeros(dof)
     for n in nodes:
@@ -58,11 +58,11 @@ def oc(n_elx, n_ely, vol_frac, x, dc):
     x_new = np.zeros(x.shape)
     while (l2 - l1) / (l1 + l2) > 1e-3:
         l_mid = 0.5 * (l2 + l1)
-        x_new[:] = np.maximum(0.001, np.maximum(x - move,
-                                                np.minimum(1.0,
-                                                           np.minimum(x + move,
-                                                                      x * np.sqrt(-dc / l_mid)))))
-        if np.concatenate(x_new).sum() - vol_frac * n_elx * n_ely > 0:
+        x_new = np.maximum(0.001, np.maximum(x - move,
+                                             np.minimum(1.0,
+                                                        np.minimum(x + move,
+                                                                   x * np.sqrt(-dc / l_mid)))))
+        if np.sum(x_new) - vol_frac * n_elx * n_ely > 0:
             l1 = l_mid
         else:
             l2 = l_mid

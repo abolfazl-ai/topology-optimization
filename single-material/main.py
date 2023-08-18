@@ -38,13 +38,12 @@ def main(length, width, n_elx, n_ely, vol_frac, penalty):
         x = oc(n_elx, n_ely, vol_frac, x, dc)
         change = np.max(abs(x - x_old))
 
-        # print(F'Iteration: {loop}, Change: {change}')
         plt.imshow(-x.T, cmap='gray', vmin=-1, vmax=0, origin='lower')
         plt.title(F'Iteration: {loop}, Change: {change:0.4f}')
-        plt.pause(1E-6)
+        plt.pause(1E-3)
 
     print('Model converged')
-    plt.pause(1E6)
+    plt.pause(100)
 
 
 def fem(iK, jK, KE, U, F, x, penalty, dof):

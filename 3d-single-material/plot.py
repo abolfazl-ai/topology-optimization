@@ -15,6 +15,7 @@ def plot_result(result, densities, colors, section_percentage=0):
     sec_cmap = LinearSegmentedColormap.from_list("section", sec_colors)
 
     fig = plt.figure()
+    plt.figaspect(1)
     ax1 = fig.add_subplot(1, 2, 1, projection='3d')
     ax1.voxels(voxel_array, edgecolor='k', facecolors=plot_colors)
     ax1.tick_params(left=False, right=False, labelleft=False, labelbottom=False, bottom=False)
@@ -24,10 +25,12 @@ def plot_result(result, densities, colors, section_percentage=0):
     ax2.tick_params(left=False, right=False, labelleft=False, labelbottom=False, bottom=False)
     ax2.grid(True)
 
+    plt.get_current_fig_manager().window.showMaximized()
     plt.show()
 
 
-xx = np.random.randint(0, 4, size=(10, 10, 10))
-dd = [1, 2, 3]
-cc = ['red', 'blue', 'green']
+xx = np.random.randint(0, 5, size=(10, 10, 10))
+xx[xx < 3] = 0
+dd = [1, 2, 3, 4]
+cc = ['red', 'blue', 'green', 'orange']
 plot_result(xx, dd, cc)

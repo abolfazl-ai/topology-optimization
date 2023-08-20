@@ -1,7 +1,7 @@
 import numpy as np
-from scipy.ndimage import convolve
-from scipy.sparse import csr_array
-from scipy.sparse.linalg import spsolve_triangular
+from scipy.ndimage import convolve, correlate
+from scipy.sparse import csr_array, diags
+from scipy.sparse.linalg import spsolve
 
 
 def main(nx, ny, vol_f, penal, r_min, ft, eta, beta, move, max_it):
@@ -25,17 +25,16 @@ def main(nx, ny, vol_f, penal, r_min, ft, eta, beta, move, max_it):
     Ke0[np.triu_indices(8)] = Ke
     Ke0 = Ke0 + Ke0.T - np.diag(np.diag(Ke0))
     #   ________________________________________________________________
-    lcDof = 2 * node_numbers[0, 0]
-    fixed = np.union1d(np.arange(0, 2 * (ny + 1) - 1, 2), 2 * node_numbers[-1, -1])
+    fixed = np.union1d(np.arange(0, 2 * (ny + 1), 2), 2 * node_numbers[-1, -1] + 1)
     pasS, pasV = [], []
     F = csr_array(([-1], ([1], [0])), shape=(nDof, 1))
-    free = np.setdiff1d(np.arange(1, nDof + 1), fixed)
+    free = np.setdiff1d(np.arange(0, nDof), fixed)
     act = np.setdiff1d(np.arange(0, nEl), np.union1d(pasS, pasV))
     #   ________________________________________________________________
     dy, dx = np.meshgrid(np.arange(-np.ceil(r_min) + 1, np.ceil(r_min)),
                          np.arange(-np.ceil(r_min) + 1, np.ceil(r_min)))
     h = np.maximum(0, r_min - np.sqrt(dx ** 2 + dy ** 2))
-    Hs = convolve(np.ones((ny, nx)), h, mode='nearest')
+    Hs = convolve(np.ones((ny, nx)), h, mode='reflect')
     dHs = Hs
     #   ________________________________________________________________
     x, dsK, dV = np.zeros(nEl), np.zeros(nEl), np.zeros(nEl)
@@ -46,7 +45,7 @@ def main(nx, ny, vol_f, penal, r_min, ft, eta, beta, move, max_it):
     #   ________________________________________________________________
     while ch > 1e-6 and loop < max_it:
         loop += 1
-        xTilde = convolve(np.reshape(x, (ny, nx)), h, mode='nearest') / Hs
+        xTilde = convolve(np.reshape(x, (ny, nx), order='F'), h, mode='reflect') / Hs
         xPhys[act] = xTilde.flatten()[act]
         if ft > 1:
             f = (np.mean(prj(xPhys, eta, beta)) - vol_f) * (ft == 3)
@@ -64,13 +63,29 @@ def main(nx, ny, vol_f, penal, r_min, ft, eta, beta, move, max_it):
         dsK[act] = -penal * (E_max - E_min) * xPhys[act] ** (penal - 1)
         sK = np.reshape(Ke.reshape((-1, 1)) * sK, (len(Ke) * nEl,), order='F')
         K = csr_array((sK, (Iar[:, 0], Iar[:, 1])), shape=(nDof, nDof))
-        SSSSSSSSSSS = K.toarray()
-
-        K_free = K[free, :][:, free]
-        F_free = F[free].toarray()
-        U_free = spsolve_triangular(K_free, F_free, lower=True)
-
-        pass
+        U, K_free = np.zeros(nDof), K[free, :][:, free]
+        K_free += K_free.T - diags(K_free.diagonal()).toarray()
+        U[free] = spsolve(K_free, F[free])
+        #   ________________________________________________________________
+        dc = dsK * np.sum((U[cMat] @ Ke0) * U[cMat], axis=1)
+        dc = np.reshape(convolve(np.reshape(dc, (ny, nx), order='F') /
+                                 dHs, h, mode='reflect'), (-1,), 'F')
+        dV0 = np.reshape(correlate(np.reshape(dV, (ny, nx), 'F') /
+                                   dHs, h, mode='reflect'), (-1,), 'F')
+        #   ________________________________________________________________
+        xT = x[act]
+        xU, xL = xT + move, xT - move
+        ocP = xT * np.real(np.sqrt(-dc[act] / dV0[act]))
+        LM = [0, np.mean(ocP) / vol_f]
+        while abs((LM[1] - LM[0]) / (LM[1] + LM[0])) > 1e-4:
+            l_mid = 0.5 * (LM[0] + LM[1])
+            x[act] = np.maximum(np.minimum(np.minimum(ocP / l_mid, xU), 1), xL)
+            if np.mean(x) > vol_f:
+                LM[0] = l_mid
+            else:
+                LM[1] = l_mid
+        penal, beta = cnt(penal, penalCnt, loop), cnt(beta, betaCnt, loop)
+        print(f'It = {loop}, Change = {ch}')
 
 
 def prj(v, eta, beta):
@@ -91,4 +106,4 @@ def cnt(v, vCnt, el):
     return v + condition * vCnt[3]
 
 
-main(10, 5, 0.5, 3, 8.75, 2, 0.5, 2, 0.2, 500)
+main(300, 100, 0.5, 3, 8.75, 3, 0.5, 2, 0.2, 500)

@@ -10,12 +10,12 @@ def main(nx, ny, vol_f, penal, r_min, ft, eta, beta, move, max_it):
     betaCnt = [1, 2, 25, 2]
     #   ________________________________________________________________
     nEl, nDof = nx * ny, (1 + ny) * (1 + nx) * 2
-    node_numbers = np.reshape(range(1, (1 + nx) * (1 + ny) + 1), (1 + ny, 1 + nx), order='F')
-    cVec = np.reshape(2 * node_numbers[0: -1, 0: -1] + 1, (nEl, 1), order='F')
+    node_numbers = np.reshape(range((1 + nx) * (1 + ny)), (1 + ny, 1 + nx), order='F')
+    cVec = np.reshape(2 * node_numbers[0: -1, 0: -1] + 2, (nEl, 1), order='F')
     cMat = cVec + np.array([0, 1, 2 * ny + 2, 2 * ny + 3, 2 * ny + 0, 2 * ny + 1, -2, -1])
     sI, sII = np.hstack([np.arange(j, 8) for j in range(8)]), np.hstack([np.tile(j, 7 - j + 1) for j in range(8)])
     iK, jK = cMat[:, sI].T, cMat[:, sII].T
-    Iar = np.sort(np.hstack((iK.reshape((-1, 1), order='F'), jK.reshape((-1, 1), order='F'))))[:, [1, 0]] - 1
+    Iar = np.sort(np.hstack((iK.reshape((-1, 1), order='F'), jK.reshape((-1, 1), order='F'))))[:, [1, 0]]
     c1 = np.array([12, 3, -6, -3, -6, -3, 0, 3, 12, 3, 0, -3, -6, -3, -6, 12, -3, 0,
                    -3, -6, 3, 12, 3, -6, 3, -6, 12, 3, -6, -3, 12, 3, 0, 12, -3, 12])
     c2 = np.array([-4, 3, -2, 9, 2, -3, 4, -9, -4, -9, 4, -3, 2, 9, -2, -4, -3, 4,
@@ -26,7 +26,7 @@ def main(nx, ny, vol_f, penal, r_min, ft, eta, beta, move, max_it):
     Ke0 = Ke0 + Ke0.T - np.diag(np.diag(Ke0))
     #   ________________________________________________________________
     lcDof = 2 * node_numbers[0, 0]
-    fixed = np.union1d(np.arange(0, 2 * (ny + 1)-1, 2), 2 * node_numbers[-1, -1])
+    fixed = np.union1d(np.arange(0, 2 * (ny + 1) - 1, 2), 2 * node_numbers[-1, -1])
     pasS, pasV = [], []
     F = csr_array(([-1], ([1], [0])), shape=(nDof, 1))
     free = np.setdiff1d(np.arange(1, nDof + 1), fixed)
@@ -59,7 +59,7 @@ def main(nx, ny, vol_f, penal, r_min, ft, eta, beta, move, max_it):
 
         ch = np.linalg.norm(xPhys - xOld) / np.sqrt(nEl)
         xOld = xPhys
-    #   ________________________________________________________________
+        #   ________________________________________________________________
         sK = E_min + xPhys ** penal * (E_max - E_min)
         dsK[act] = -penal * (E_max - E_min) * xPhys[act] ** (penal - 1)
         sK = np.reshape(Ke.reshape((-1, 1)) * sK, (len(Ke) * nEl,), order='F')

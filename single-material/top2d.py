@@ -1,30 +1,20 @@
 import numpy as np
 from scipy.ndimage import correlate
-from scipy.sparse import csr_array, diags
-from scipy.sparse.linalg import spsolve
+from scipy.sparse import csc_matrix, diags
 import matplotlib.pyplot as plt
 import time
+import cvxopt
+import cvxopt.cholmod
 
 
 def main(nx, ny, vol_f, penal, r_min, ft, eta, beta, move, max_it):
     E_min, E_max, nu = 1E-9, 1.0, 0.3
-    penalCnt = [1, 1, 25, 0.25]
-    betaCnt = [1, 1, 25, 2]
+    penalCnt, betaCnt = [1, 1, 25, 0.25], [1, 1, 25, 2]
     #   ________________________________________________________________
     nEl, nDof = nx * ny, (1 + ny) * (1 + nx) * 2
     Ke, Ke0, cMat, Iar = element_stiffness(nx, ny, nu)
-    #   ________________________________________________________________
-    fixed = np.union1d(np.arange(0, 2 * (ny + 1), 2), 2 * (1 + nx) * (1 + ny) - 1)
-    pasS, pasV = [], []
-    F = csr_array(([-1], ([1], [0])), shape=(nDof, 1))
-    free = np.setdiff1d(np.arange(0, nDof), fixed)
-    act = np.setdiff1d(np.arange(0, nEl), np.union1d(pasS, pasV))
-    #   ________________________________________________________________
-    dy, dx = np.meshgrid(np.arange(-np.ceil(r_min) + 1, np.ceil(r_min)),
-                         np.arange(-np.ceil(r_min) + 1, np.ceil(r_min)))
-    h = np.maximum(0, r_min - np.sqrt(dx ** 2 + dy ** 2))
-    Hs = correlate(np.ones((ny, nx)), h, mode='reflect')
-    dHs = Hs
+    pasS, pasV, F, free, act = bc_load(nx, ny, nDof)
+    h, Hs, dHs = prepare_filter(ny, nx, r_min)
     #   ________________________________________________________________
     x, dsK, dV = np.zeros(nEl), np.zeros(nEl), np.zeros(nEl)
     dV[act] = 1 / (nEl * vol_f)
@@ -37,7 +27,7 @@ def main(nx, ny, vol_f, penal, r_min, ft, eta, beta, move, max_it):
     while ch > 1e-4 and loop < max_it:
         loop += 1
         xTilde = correlate(np.reshape(x, (ny, nx), 'F'), h, mode='reflect') / Hs
-        xPhys[act] = np.reshape(xTilde, (-1,), 'F')[act]
+        xPhys[act] = xTilde.flatten(order='F')[act]
         if ft > 1:
             f = (np.mean(prj(xPhys, eta, beta)) - vol_f) * (ft == 3)
             while abs(f) > 1e-6:
@@ -50,36 +40,28 @@ def main(nx, ny, vol_f, penal, r_min, ft, eta, beta, move, max_it):
         ch = np.linalg.norm(xPhys - xOld) / np.sqrt(nEl)
         xOld = xPhys.copy()
         #   ________________________________________________________________
-        sK = E_min + xPhys ** penal * (E_max - E_min)
         dsK[act] = -penal * (E_max - E_min) * xPhys[act] ** (penal - 1)
-        sK = np.reshape(Ke.reshape((-1, 1)) * sK, (len(Ke) * nEl,), order='F')
-        K = csr_array((sK, (Iar[:, 0], Iar[:, 1])), shape=(nDof, nDof))
-        U, K_free = np.zeros(nDof), K[free, :][:, free]
-        K_free += K_free.T - diags(K_free.diagonal())
-        U[free] = spsolve(K_free, F[free])
+        sK = ((Ke.flatten()[np.newaxis]).T * (E_min + xPhys ** penal * (E_max - E_min))).flatten(order='F')
+        K = csc_matrix((sK, (Iar[:, 0], Iar[:, 1])), shape=(nDof, nDof))
+        U, K = np.zeros(nDof), K[free, :][:, free]
+        K = (K + K.T - diags(K.diagonal())).tocoo()
+        K = cvxopt.spmatrix(K.data, K.row.astype(np.int32), K.col.astype(np.int32))
+        B = cvxopt.matrix(F[free])
+        cvxopt.cholmod.linsolve(K, B)
+        U[free] = np.array(B)[:, 0]
         #   ________________________________________________________________
         dc = dsK * np.sum((U[cMat] @ Ke0) * U[cMat], axis=1)
-        dc = np.reshape(correlate(np.reshape(dc, (ny, nx), order='F') /
-                                  dHs, h, mode='reflect'), (-1,), 'F')
-        dV0 = np.reshape(correlate(np.reshape(dV, (ny, nx), 'F') /
-                                   dHs, h, mode='reflect'), (-1,), 'F')
+        dc = correlate(np.reshape(dc, (ny, nx), order='F') / dHs, h, mode='reflect').flatten(order='F')
+        dV0 = correlate(np.reshape(dV, (ny, nx), 'F') / dHs, h, mode='reflect').flatten(order='F')
         #   ________________________________________________________________
-        xT = x[act]
-        xU, xL = xT + move, xT - move
-        ocP = xT * np.real(np.sqrt(-dc[act] / dV0[act]))
-        LM = [0, np.mean(ocP) / vol_f]
-        while abs((LM[1] - LM[0]) / (LM[1] + LM[0])) > 1e-4:
-            l_mid = 0.5 * (LM[0] + LM[1])
-            x[act] = np.maximum(np.minimum(np.minimum(ocP / l_mid, xU), 1), xL)
-            if np.mean(x) > vol_f:
-                LM[0] = l_mid
-            else:
-                LM[1] = l_mid
+        x = optimality_criterion(x, vol_f, act, move, dc, dV0)
         penal, beta = cnt(penal, penalCnt, loop), cnt(beta, betaCnt, loop)
         #   ________________________________________________________________
         print(f'It = {loop}, Change = {ch}')
         plot(1 - np.reshape(xPhys, (ny, nx), 'F'), loop, ch, fig, ax, im, bg)
+
     print(f'Model converged in {(time.time() - start):0.2f} Seconds')
+    ax.set_title(F'It: {loop}, Change: {ch:0.5f} | Converged in {(time.time() - start):0.1f} Seconds')
     plt.show(block=True)
 
 
@@ -88,8 +70,8 @@ def prj(v, eta, beta):
 
 
 def deta(v, eta, beta):
-    return -beta * (1 / np.sinh(beta)) * ((1 / np.cosh(beta * (v - eta))) ** 2) * (np.sinh(v * beta)) * (
-        np.sinh((1 - v) * beta))
+    return (-beta * (1 / np.sinh(beta)) * ((1 / np.cosh(beta * (v - eta))) ** 2) *
+            (np.sinh(v * beta)) * (np.sinh((1 - v) * beta)))
 
 
 def dprj(v, eta, beta):
@@ -99,6 +81,39 @@ def dprj(v, eta, beta):
 def cnt(v, vCnt, el):
     condition = (el >= vCnt[0]) and (v < vCnt[1]) and (el % vCnt[2] == 0)
     return v + condition * vCnt[3]
+
+
+def bc_load(nx, ny, nDof):
+    fixed = np.union1d(np.arange(0, 2 * (ny + 1), 2), 2 * (1 + nx) * (1 + ny) - 1)
+    pasS, pasV = [], []
+    F = csc_matrix(([-1.0], ([1], [0])), shape=(nDof, 1)).toarray()
+    free = np.setdiff1d(np.arange(0, nDof), fixed)
+    act = np.setdiff1d(np.arange(0, nx * ny), np.union1d(pasS, pasV))
+    return pasS, pasV, F, free, act
+
+
+def prepare_filter(ny, nx, r_min):
+    dy, dx = np.meshgrid(np.arange(-np.ceil(r_min) + 1, np.ceil(r_min)),
+                         np.arange(-np.ceil(r_min) + 1, np.ceil(r_min)))
+    h = np.maximum(0, r_min - np.sqrt(dx ** 2 + dy ** 2))
+    Hs = correlate(np.ones((ny, nx)), h, mode='reflect')
+    return h, Hs, Hs.copy()
+
+
+def optimality_criterion(x, vol_f, act, move, dc, dV0):
+    x_new = np.zeros(x.shape)
+    xT = x[act]
+    xU, xL = xT + move, xT - move
+    ocP = xT * np.real(np.sqrt(-dc[act] / dV0[act]))
+    LM = [0, np.mean(ocP) / vol_f]
+    while abs((LM[1] - LM[0]) / (LM[1] + LM[0])) > 1e-4:
+        l_mid = 0.5 * (LM[0] + LM[1])
+        x_new[act] = np.maximum(np.minimum(np.minimum(ocP / l_mid, xU), 1), xL)
+        if np.mean(x_new) > vol_f:
+            LM[0] = l_mid
+        else:
+            LM[1] = l_mid
+    return x_new
 
 
 def element_stiffness(nx, ny, nu):
@@ -134,10 +149,10 @@ def init_fig(x):
 def plot(x, loop, ch, fig, ax, im, bg):
     fig.canvas.restore_region(bg)
     im.set_array(x)
-    ax.set_title(F'Iteration: {loop}, Change: {ch:0.4f}')
+    ax.set_title(F'Iteration: {loop}, Change: {ch:0.5f}')
     ax.draw_artist(im)
     fig.canvas.blit(fig.bbox)
     fig.canvas.flush_events()
 
 
-main(300, 100, 0.2, 3, 8.75, 1, 0.5, 2, 0.2, 500)
+main(600, 200, 0.2, 3, 8.75, 3, 0.5, 2, 0.2, 500)

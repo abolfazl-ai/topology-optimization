@@ -169,12 +169,10 @@ def read_pres(input_path, nx, ny):
     pasS, pasV = [], []
     for _, row in preserved.iterrows():
         left, right, top, bottom = row['Left'], row['Right'], row['Top'], row['Bottom']
-        for x in np.arange(left, right, step=1 / nx):
-            elements = range(int(x * nx * ny + (1 - top) * ny), int(x * nx * ny + (1 - bottom) * ny))
-            if row['Density'] == 1:
-                pasS.extend(elements)
-            else:
-                pasV.extend(elements)
+        elements = [range(int(x * nx * ny + (1 - top) * ny), int(x * nx * ny + (1 - bottom) * ny))
+                    for x in np.arange(left, right, step=1 / nx)]
+        pasS.extend(elements) if row['Density'] == 1 else pasV.extend(elements)
+
     act = np.setdiff1d(np.arange(0, nx * ny), np.union1d(pasS, pasV)).tolist()
     return pasS, pasV, act
 

@@ -13,7 +13,7 @@ def main(input_path='input.xlsx'):
     penalCnt, betaCnt = [1, 1, 25, 0.25], [1, 1, 25, 2]
     #   ________________________________________________________________
     nEl, nDof = nx * ny, (1 + ny) * (1 + nx) * 2
-    pasS, pasV, _, _, act = bc_load(nx, ny, nDof)
+    pasS, pasV, act = read_pres(input_path, nx, ny)
     free, F = read_bc(input_path, nx, ny, nDof)
     Ke, Ke0, cMat, Iar = element_stiffness(nx, ny, nu)
     h, Hs, dHs = prepare_filter(ny, nx, r_min)
@@ -26,7 +26,7 @@ def main(input_path='input.xlsx'):
     #   ________________________________________________________________
     fig, ax, im, bg = init_fig(1 - np.reshape(xPhys, (ny, nx), 'F'))
     start = time.time()
-    while ch > 1e-5 and loop < max_it:
+    while ch > 1e-4 and loop < max_it:
         loop += 1
         xTilde = correlate(np.reshape(x, (ny, nx), 'F'), h, mode='reflect') / Hs
         xPhys[act] = xTilde.flatten(order='F')[act]
@@ -119,15 +119,6 @@ def element_stiffness(nx, ny, nu):
     return Ke, Ke0, cMat, Iar
 
 
-def bc_load(nx, ny, nDof):
-    fixed = np.union1d(np.arange(0, 2 * (ny + 1), 2), 2 * (1 + nx) * (1 + ny) - 1)
-    pasS, pasV = [], []
-    F = matrix(csc_matrix(([-1.0], ([1], [0])), shape=(nDof, 1)).toarray())
-    free = np.setdiff1d(np.arange(0, nDof), fixed).tolist()
-    act = np.setdiff1d(np.arange(0, nx * ny), np.union1d(pasS, pasV)).tolist()
-    return pasS, pasV, F, free, act
-
-
 def init_fig(x):
     plt.ion()  # Ensure that redrawing is possible
     fig, ax = plt.subplots()
@@ -159,30 +150,33 @@ def read_options(input_path):
 def read_bc(input_path, nx, ny, nDof):
     bc = pd.read_excel(input_path, sheet_name='BC')
     nodes = {}
-    for index, row in bc.iterrows():
+    for _, row in bc.iterrows():
         sx, sy, ex, ey = row['StartX'], row['StartY'], row['EndX'], row['EndY']
-        if sx == ex and sy == ey:
-            node_x, node_y = get_node_dof(sx, sy, nx, ny)
-            nodes[node_x], nodes[node_y] = (row['DisX'], row['ForceX']), (row['DisY'], row['ForceY'])
-        else:
-            for x in np.linspace(sx, ex, int(max(1, (ex - sx) * (nx + 1)))):
-                for y in np.linspace(sy, ey, int(max(1, (ey - sy) * (ny + 1)))):
-                    node_x, node_y = get_node_dof(x, y, nx, ny)
-                    nodes[node_x], nodes[node_y] = (row['DisX'], row['ForceX']), (row['DisY'], row['ForceY'])
-
+        for x in np.linspace(sx, ex, int(max(1, (ex - sx) * (nx + 1)))):
+            for y in np.linspace(sy, ey, int(max(1, (ey - sy) * (ny + 1)))):
+                node_number = round((ny + 1) * x * nx + (1 - y) * ny)
+                node_x, node_y = node_number * 2, node_number * 2 + 1
+                nodes[node_x], nodes[node_y] = (row['DisX'], row['ForceX']), (row['DisY'], row['ForceY'])
     fixed = [i for i, (d, _) in nodes.items() if d == 0]
     free = np.setdiff1d(np.arange(0, nDof), fixed).tolist()
     Fd = {i: f for i, (_, f) in nodes.items() if not np.isnan(f)}
-    F = csc_matrix((list(Fd.values()), (list(Fd.keys()), np.zeros(len(Fd), dtype=np.int32))), shape=(nDof, 1))
+    F = csc_matrix((list(Fd.values()), (list(Fd.keys()), np.zeros(len(Fd)))), shape=(nDof, 1))
     return free, matrix(F.toarray())
 
-    # preserved = pd.read_excel(input_path, sheet_name='Preserved')
 
-
-def get_node_dof(x, y, nx, ny):
-    n, m = x * nx, (1 - y) * ny
-    node_number = round((ny + 1) * n + m)
-    return node_number * 2, node_number * 2 + 1
+def read_pres(input_path, nx, ny):
+    preserved = pd.read_excel(input_path, sheet_name='Preserved')
+    pasS, pasV = [], []
+    for _, row in preserved.iterrows():
+        left, right, top, bottom = row['Left'], row['Right'], row['Top'], row['Bottom']
+        for x in np.arange(left, right, step=1 / nx):
+            elements = range(int(x * nx * ny + (1 - top) * ny), int(x * nx * ny + (1 - bottom) * ny))
+            if row['Density'] == 1:
+                pasS.extend(elements)
+            else:
+                pasV.extend(elements)
+    act = np.setdiff1d(np.arange(0, nx * ny), np.union1d(pasS, pasV)).tolist()
+    return pasS, pasV, act
 
 
 main()

@@ -1,18 +1,21 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import pandas as pd
 from scipy.ndimage import correlate
 from scipy.sparse import csc_matrix
 from cvxopt import cholmod, matrix, spmatrix
 import time
 
 
-def main(nx, ny, vol_f, penal, r_min, ft, eta, beta, move, max_it):
+def main(input_path='input.xlsx'):
+    nx, ny, vol_f, penal, ft, max_it, r_min, eta, beta, move = read_options(input_path)
     E_min, E_max, nu = 1E-9, 1.0, 0.3
     penalCnt, betaCnt = [1, 1, 25, 0.25], [1, 1, 25, 2]
     #   ________________________________________________________________
     nEl, nDof = nx * ny, (1 + ny) * (1 + nx) * 2
+    pasS, pasV, _, _, act = bc_load(nx, ny, nDof)
+    free, F = read_bc(input_path, nx, ny, nDof)
     Ke, Ke0, cMat, Iar = element_stiffness(nx, ny, nu)
-    pasS, pasV, F, free, act = bc_load(nx, ny, nDof)
     h, Hs, dHs = prepare_filter(ny, nx, r_min)
     #   ________________________________________________________________
     x, dsK, dV = np.zeros(nEl), np.zeros(nEl), np.zeros(nEl)
@@ -23,27 +26,22 @@ def main(nx, ny, vol_f, penal, r_min, ft, eta, beta, move, max_it):
     #   ________________________________________________________________
     fig, ax, im, bg = init_fig(1 - np.reshape(xPhys, (ny, nx), 'F'))
     start = time.time()
-    while ch > 1e-4 and loop < max_it:
+    while ch > 1e-5 and loop < max_it:
         loop += 1
         xTilde = correlate(np.reshape(x, (ny, nx), 'F'), h, mode='reflect') / Hs
         xPhys[act] = xTilde.flatten(order='F')[act]
-        if loop == 1:
-            pass
-
         if ft > 1:
             f = (np.mean(prj(xPhys, eta, beta)) - vol_f) * (ft == 3)
             while abs(f) > 1e-6:
                 eta = eta - f / np.mean(deta(xPhys.flatten(), eta, beta))
                 f = np.mean(prj(xPhys, eta, beta)) - vol_f
-
             dHs = Hs / np.reshape(dprj(xTilde, eta, beta), (ny, nx))
             xPhys = prj(xPhys, eta, beta)
-
         ch = np.linalg.norm(xPhys - xOld) / np.sqrt(nEl)
         xOld = xPhys.copy()
         #   ________________________________________________________________
         dsK[act] = -penal * (E_max - E_min) * xPhys[act] ** (penal - 1)
-        sK = ((Ke.flatten()[np.newaxis]).T * (E_min + xPhys ** penal * (E_max - E_min))).flatten(order='F')
+        sK = ((Ke[np.newaxis]).T * (E_min + xPhys ** penal * (E_max - E_min))).flatten(order='F')
         K = csc_matrix((sK, (Iar[:, 0], Iar[:, 1])), shape=(nDof, nDof))[free, :][:, free].tocoo()
         U, B = np.zeros(nDof), F[free, 0]
         K = spmatrix(K.data, K.row.astype(np.int32), K.col.astype(np.int32))
@@ -57,7 +55,7 @@ def main(nx, ny, vol_f, penal, r_min, ft, eta, beta, move, max_it):
         x = optimality_criterion(x, vol_f, act, move, dc, dV0)
         penal, beta = cnt(penal, penalCnt, loop), cnt(beta, betaCnt, loop)
         #   ________________________________________________________________
-        print(f'It = {loop}, Change = {ch}')
+        print(f'Iteration = {loop}, Change = {ch:0.5f}')
         plot(1 - np.reshape(xPhys, (ny, nx), 'F'), loop, ch, fig, ax, im, bg)
 
     print(f'Model converged in {(time.time() - start):0.2f} seconds')
@@ -83,15 +81,6 @@ def cnt(v, vCnt, el):
     return v + condition * vCnt[3]
 
 
-def bc_load(nx, ny, nDof):
-    fixed = np.union1d(np.arange(0, 2 * (ny + 1), 2), 2 * (1 + nx) * (1 + ny) - 1)
-    pasS, pasV = [], []
-    F = matrix(csc_matrix(([-1.0], ([1], [0])), shape=(nDof, 1)).toarray())
-    free = np.setdiff1d(np.arange(0, nDof), fixed).tolist()
-    act = np.setdiff1d(np.arange(0, nx * ny), np.union1d(pasS, pasV)).tolist()
-    return pasS, pasV, F, free, act
-
-
 def prepare_filter(ny, nx, r_min):
     dy, dx = np.meshgrid(np.arange(-np.ceil(r_min) + 1, np.ceil(r_min)),
                          np.arange(-np.ceil(r_min) + 1, np.ceil(r_min)))
@@ -101,7 +90,7 @@ def prepare_filter(ny, nx, r_min):
 
 
 def optimality_criterion(x, vol_f, act, move, dc, dV0):
-    x_new, xT = x.copy(),  x[act]
+    x_new, xT = x.copy(), x[act]
     xU, xL = xT + move, xT - move
     ocP = xT * np.real(np.sqrt(-dc[act] / dV0[act]))
     LM = [0, np.mean(ocP) / vol_f]
@@ -130,6 +119,15 @@ def element_stiffness(nx, ny, nu):
     return Ke, Ke0, cMat, Iar
 
 
+def bc_load(nx, ny, nDof):
+    fixed = np.union1d(np.arange(0, 2 * (ny + 1), 2), 2 * (1 + nx) * (1 + ny) - 1)
+    pasS, pasV = [], []
+    F = matrix(csc_matrix(([-1.0], ([1], [0])), shape=(nDof, 1)).toarray())
+    free = np.setdiff1d(np.arange(0, nDof), fixed).tolist()
+    act = np.setdiff1d(np.arange(0, nx * ny), np.union1d(pasS, pasV)).tolist()
+    return pasS, pasV, F, free, act
+
+
 def init_fig(x):
     plt.ion()  # Ensure that redrawing is possible
     fig, ax = plt.subplots()
@@ -151,4 +149,40 @@ def plot(x, loop, ch, fig, ax, im, bg):
     fig.canvas.flush_events()
 
 
-main(600, 200, 0.5, 3, 8.75, 3, 0.5, 2, 0.2, 500)
+def read_options(input_path):
+    options = pd.read_excel(input_path, sheet_name='Options')
+    nx, ny, vol_f, penal, ft, max_it, r_min, eta, beta, move = options['Value']
+    nx, ny, penal, ft, max_it = np.array((nx, ny, penal, ft, max_it), dtype=np.int32)
+    return nx, ny, vol_f, penal, ft, max_it, r_min, eta, beta, move
+
+
+def read_bc(input_path, nx, ny, nDof):
+    bc = pd.read_excel(input_path, sheet_name='BC')
+    nodes = {}
+    for index, row in bc.iterrows():
+        sx, sy, ex, ey = row['StartX'], row['StartY'], row['EndX'], row['EndY']
+        if sx == ex and sy == ey:
+            node_x, node_y = get_node_dof(sx, sy, nx, ny)
+            nodes[node_x], nodes[node_y] = (row['DisX'], row['ForceX']), (row['DisY'], row['ForceY'])
+        else:
+            for x in np.linspace(sx, ex, int(max(1, (ex - sx) * (nx + 1)))):
+                for y in np.linspace(sy, ey, int(max(1, (ey - sy) * (ny + 1)))):
+                    node_x, node_y = get_node_dof(x, y, nx, ny)
+                    nodes[node_x], nodes[node_y] = (row['DisX'], row['ForceX']), (row['DisY'], row['ForceY'])
+
+    fixed = [i for i, (d, _) in nodes.items() if d == 0]
+    free = np.setdiff1d(np.arange(0, nDof), fixed).tolist()
+    Fd = {i: f for i, (_, f) in nodes.items() if not np.isnan(f)}
+    F = csc_matrix((list(Fd.values()), (list(Fd.keys()), np.zeros(len(Fd), dtype=np.int32))), shape=(nDof, 1))
+    return free, matrix(F.toarray())
+
+    # preserved = pd.read_excel(input_path, sheet_name='Preserved')
+
+
+def get_node_dof(x, y, nx, ny):
+    n, m = x * nx, (1 - y) * ny
+    node_number = round((ny + 1) * n + m)
+    return node_number * 2, node_number * 2 + 1
+
+
+main()

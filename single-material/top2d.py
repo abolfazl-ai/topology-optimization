@@ -1,10 +1,9 @@
 import numpy as np
-from scipy.ndimage import correlate
-from scipy.sparse import csc_matrix, diags
 import matplotlib.pyplot as plt
+from scipy.ndimage import correlate
+from scipy.sparse import csc_matrix
+from cvxopt import cholmod, matrix, spmatrix
 import time
-import cvxopt
-import cvxopt.cholmod
 
 
 def main(nx, ny, vol_f, penal, r_min, ft, eta, beta, move, max_it):
@@ -28,6 +27,9 @@ def main(nx, ny, vol_f, penal, r_min, ft, eta, beta, move, max_it):
         loop += 1
         xTilde = correlate(np.reshape(x, (ny, nx), 'F'), h, mode='reflect') / Hs
         xPhys[act] = xTilde.flatten(order='F')[act]
+        if loop == 1:
+            pass
+
         if ft > 1:
             f = (np.mean(prj(xPhys, eta, beta)) - vol_f) * (ft == 3)
             while abs(f) > 1e-6:
@@ -42,12 +44,10 @@ def main(nx, ny, vol_f, penal, r_min, ft, eta, beta, move, max_it):
         #   ________________________________________________________________
         dsK[act] = -penal * (E_max - E_min) * xPhys[act] ** (penal - 1)
         sK = ((Ke.flatten()[np.newaxis]).T * (E_min + xPhys ** penal * (E_max - E_min))).flatten(order='F')
-        K = csc_matrix((sK, (Iar[:, 0], Iar[:, 1])), shape=(nDof, nDof))
-        U, K = np.zeros(nDof), K[free, :][:, free]
-        K = (K + K.T - diags(K.diagonal())).tocoo()
-        K = cvxopt.spmatrix(K.data, K.row.astype(np.int32), K.col.astype(np.int32))
-        B = cvxopt.matrix(F[free])
-        cvxopt.cholmod.linsolve(K, B)
+        K = csc_matrix((sK, (Iar[:, 0], Iar[:, 1])), shape=(nDof, nDof))[free, :][:, free].tocoo()
+        U, B = np.zeros(nDof), F[free, 0]
+        K = spmatrix(K.data, K.row.astype(np.int32), K.col.astype(np.int32))
+        cholmod.linsolve(K, B)
         U[free] = np.array(B)[:, 0]
         #   ________________________________________________________________
         dc = dsK * np.sum((U[cMat] @ Ke0) * U[cMat], axis=1)
@@ -60,8 +60,8 @@ def main(nx, ny, vol_f, penal, r_min, ft, eta, beta, move, max_it):
         print(f'It = {loop}, Change = {ch}')
         plot(1 - np.reshape(xPhys, (ny, nx), 'F'), loop, ch, fig, ax, im, bg)
 
-    print(f'Model converged in {(time.time() - start):0.2f} Seconds')
-    ax.set_title(F'It: {loop}, Change: {ch:0.5f} | Converged in {(time.time() - start):0.1f} Seconds')
+    print(f'Model converged in {(time.time() - start):0.2f} seconds')
+    ax.set_title(F'Iteration: {loop} | Model converged in {(time.time() - start):0.1f} seconds')
     plt.show(block=True)
 
 
@@ -86,9 +86,9 @@ def cnt(v, vCnt, el):
 def bc_load(nx, ny, nDof):
     fixed = np.union1d(np.arange(0, 2 * (ny + 1), 2), 2 * (1 + nx) * (1 + ny) - 1)
     pasS, pasV = [], []
-    F = csc_matrix(([-1.0], ([1], [0])), shape=(nDof, 1)).toarray()
-    free = np.setdiff1d(np.arange(0, nDof), fixed)
-    act = np.setdiff1d(np.arange(0, nx * ny), np.union1d(pasS, pasV))
+    F = matrix(csc_matrix(([-1.0], ([1], [0])), shape=(nDof, 1)).toarray())
+    free = np.setdiff1d(np.arange(0, nDof), fixed).tolist()
+    act = np.setdiff1d(np.arange(0, nx * ny), np.union1d(pasS, pasV)).tolist()
     return pasS, pasV, F, free, act
 
 
@@ -101,18 +101,14 @@ def prepare_filter(ny, nx, r_min):
 
 
 def optimality_criterion(x, vol_f, act, move, dc, dV0):
-    x_new = np.zeros(x.shape)
-    xT = x[act]
+    x_new, xT = x.copy(),  x[act]
     xU, xL = xT + move, xT - move
     ocP = xT * np.real(np.sqrt(-dc[act] / dV0[act]))
     LM = [0, np.mean(ocP) / vol_f]
     while abs((LM[1] - LM[0]) / (LM[1] + LM[0])) > 1e-4:
         l_mid = 0.5 * (LM[0] + LM[1])
         x_new[act] = np.maximum(np.minimum(np.minimum(ocP / l_mid, xU), 1), xL)
-        if np.mean(x_new) > vol_f:
-            LM[0] = l_mid
-        else:
-            LM[1] = l_mid
+        LM[0], LM[1] = (l_mid, LM[1]) if np.mean(x_new) > vol_f else (LM[0], l_mid)
     return x_new
 
 
@@ -155,4 +151,4 @@ def plot(x, loop, ch, fig, ax, im, bg):
     fig.canvas.flush_events()
 
 
-main(600, 200, 0.2, 3, 8.75, 3, 0.5, 2, 0.2, 500)
+main(600, 200, 0.5, 3, 8.75, 3, 0.5, 2, 0.2, 500)

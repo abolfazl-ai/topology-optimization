@@ -7,7 +7,7 @@ from cvxopt import cholmod, matrix, spmatrix
 import time
 
 
-def top2d(input_path='input.xlsx'):
+def top2d_mm(input_path='input.xlsx'):
     nx, ny, vol_f, penal, ft, max_it, r_min, eta, beta, move = read_options(input_path)
     E_min, E_max, nu = 1E-9, 1.0, 0.3
     penalCnt, betaCnt = [1, 1, 25, 0.25], [1, 1, 25, 2]
@@ -176,4 +176,4 @@ def read_pres(input_path, nx, ny):
     return pasS, pasV, act
 
 
-top2d()
+top2d_mm()

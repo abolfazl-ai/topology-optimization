@@ -18,7 +18,7 @@ def top2d(input_path='input.xlsx'):
     Ke, Ke0, cMat, Iar = element_stiffness(nx, ny, nu)
     h, Hs, dHs = prepare_filter(ny, nx, r_min)
     #   ________________________________________________________________
-    x, dsK, dV = np.zeros(nEl), np.zeros(nEl), np.zeros(nEl)
+    x, dE_, dV = np.zeros(nEl), np.zeros(nEl), np.zeros(nEl)
     dV[act] = 1 / (nEl * vol_f)
     x[act] = (vol_f * (nEl - len(pasV)) - len(pasS)) / len(act)
     x[pasS] = 1
@@ -40,15 +40,15 @@ def top2d(input_path='input.xlsx'):
         ch = np.linalg.norm(xPhys - xOld) / np.sqrt(nEl)
         xOld = xPhys.copy()
         #   ________________________________________________________________
-        dsK[act] = -penal * (E_max - E_min) * xPhys[act] ** (penal - 1)
-        sK = ((Ke[np.newaxis]).T * (E_min + xPhys ** penal * (E_max - E_min))).flatten(order='F')
+        E_, dE_ = simp_interpolation(xPhys, penal, E_min, E_max)
+        sK = ((Ke[np.newaxis]).T * E_).flatten(order='F')
         K = csc_matrix((sK, (Iar[:, 0], Iar[:, 1])), shape=(nDof, nDof))[free, :][:, free].tocoo()
         U, B = np.zeros(nDof), F[free, 0]
         K = spmatrix(K.data, K.row.astype(np.int32), K.col.astype(np.int32))
         cholmod.linsolve(K, B)
         U[free] = np.array(B)[:, 0]
         #   ________________________________________________________________
-        dc = dsK * np.sum((U[cMat] @ Ke0) * U[cMat], axis=1)
+        dc = -dE_ * np.sum((U[cMat] @ Ke0) * U[cMat], axis=1)
         dc = correlate(np.reshape(dc, (ny, nx), order='F') / dHs, h, mode='reflect').flatten(order='F')
         dV0 = correlate(np.reshape(dV, (ny, nx), 'F') / dHs, h, mode='reflect').flatten(order='F')
         #   ________________________________________________________________
@@ -79,6 +79,12 @@ def dprj(v, eta, beta):
 def cnt(v, vCnt, el):
     condition = (el >= vCnt[0]) and (v < vCnt[1]) and (el % vCnt[2] == 0)
     return v + condition * vCnt[3]
+
+
+def simp_interpolation(x, penal, Y_min, Y_max):
+    y = Y_min + x ** penal * (Y_max - Y_min)
+    dy = penal * (Y_max - Y_min) * x ** (penal - 1)
+    return y, dy
 
 
 def prepare_filter(ny, nx, r_min):

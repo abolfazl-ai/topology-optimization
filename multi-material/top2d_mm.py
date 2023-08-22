@@ -9,16 +9,16 @@ import time
 
 def top2d_mm(input_path='input.xlsx'):
     nx, ny, vol_f, penal, ft, max_it, r_min, eta, beta, move = read_options(input_path)
-    E_min, E_max, nu = 1E-9, 1.0, 0.3
     penalCnt, betaCnt = [1, 1, 25, 0.25], [1, 1, 25, 2]
     #   ________________________________________________________________
     nEl, nDof = nx * ny, (1 + ny) * (1 + nx) * 2
-    pasS, pasV, act = read_pres(input_path, nx, ny)
+    D, E, P, nu, M_name, M_color = read_materials(input_path)
     free, F = read_bc(input_path, nx, ny, nDof)
-    Ke, Ke0, cMat, Iar = element_stiffness(nx, ny, nu)
+    pasS, pasV, act = read_pres(input_path, nx, ny)
+    Ke, Ke0, cMat, Iar = element_stiffness(nx, ny, 0.3)
     h, Hs, dHs = prepare_filter(ny, nx, r_min)
     #   ________________________________________________________________
-    x, dsK, dV = np.zeros(nEl), np.zeros(nEl), np.zeros(nEl)
+    x, dE_, dV = np.zeros(nEl), np.zeros(nEl), np.zeros(nEl)
     dV[act] = 1 / (nEl * vol_f)
     x[act] = (vol_f * (nEl - len(pasV)) - len(pasS)) / len(act)
     x[pasS] = 1
@@ -40,15 +40,16 @@ def top2d_mm(input_path='input.xlsx'):
         ch = np.linalg.norm(xPhys - xOld) / np.sqrt(nEl)
         xOld = xPhys.copy()
         #   ________________________________________________________________
-        dsK[act] = -penal * (E_max - E_min) * xPhys[act] ** (penal - 1)
-        sK = ((Ke[np.newaxis]).T * (E_min + xPhys ** penal * (E_max - E_min))).flatten(order='F')
+        E_, dE_ = ordered_simp_interpolation(xPhys, penal, D, E)
+        P_, dP_ = ordered_simp_interpolation(xPhys, 1 / penal, D, P)
+        sK = ((Ke[np.newaxis]).T * E_).flatten(order='F')
         K = csc_matrix((sK, (Iar[:, 0], Iar[:, 1])), shape=(nDof, nDof))[free, :][:, free].tocoo()
         U, B = np.zeros(nDof), F[free, 0]
         K = spmatrix(K.data, K.row.astype(np.int32), K.col.astype(np.int32))
         cholmod.linsolve(K, B)
         U[free] = np.array(B)[:, 0]
         #   ________________________________________________________________
-        dc = dsK * np.sum((U[cMat] @ Ke0) * U[cMat], axis=1)
+        dc = -dE_ * np.sum((U[cMat] @ Ke0) * U[cMat], axis=1)
         dc = correlate(np.reshape(dc, (ny, nx), order='F') / dHs, h, mode='reflect').flatten(order='F')
         dV0 = correlate(np.reshape(dV, (ny, nx), 'F') / dHs, h, mode='reflect').flatten(order='F')
         #   ________________________________________________________________
@@ -61,6 +62,45 @@ def top2d_mm(input_path='input.xlsx'):
     print(f'Model converged in {(time.time() - start):0.2f} seconds')
     ax.set_title(F'Iteration: {loop} | Model converged in {(time.time() - start):0.1f} seconds')
     plt.show(block=True)
+
+
+def oc(n_elx, n_ely, vol_frac, x, cost_frac, dc, P_, dP_, loop, MinMove):
+    Temp = -dc / (P_ + x * dP_)
+    lV1, lV2, lP1, lP2 = 0.0, 2 * np.max(-dc), 0.0, 2 * np.max(Temp)
+    move = max(0.15 * 0.96 ** loop, MinMove)
+    x_new = np.zeros(x.shape)
+    while ((lV2 - lV1) / (lV1 + lV2) > 1e-6) or ((lP2 - lP1) / (lP1 + lP2) > 1e-6):
+        lmidV = 0.5 * (lV2 + lV1)
+        lmidP = 0.5 * (lP2 + lP1)
+        Temp = lmidV + lmidP * P_ + lmidP * x * dP_
+        Coef = -dc / Temp
+        Coef = np.abs(Coef)
+        x_new = np.maximum(10 ** -5, np.maximum(x - move, np.minimum(1., np.minimum(x + move, x * np.sqrt(Coef)))))
+        if np.sum(x_new) - vol_frac * n_elx * n_ely > 0:
+            lV1 = lmidV
+        else:
+            lV2 = lmidV
+
+        CurrentCostFrac = np.sum(x_new * P_) / (n_elx * n_ely)
+        if CurrentCostFrac - cost_frac > 0:
+            lP1 = lmidP
+        else:
+            lP2 = lmidP
+
+    return x_new
+
+
+def ordered_simp_interpolation(x, penal, X, Y):
+    y, dy = np.zeros(x.shape), np.zeros(x.shape)
+    for i, xi in enumerate(x):
+        for j in range(len(X)):
+            if (X[j] < xi) and (X[j + 1] >= xi):
+                A = (Y[j] - Y[j + 1]) / (X[j] ** penal - X[j + 1] ** penal)
+                B = Y[j] - A * (X[j] ** penal)
+                y[i] = max(A * (xi ** penal) + B, min(Y))
+                dy[i] = A * penal * (xi ** (penal - 1))
+
+    return y, dy
 
 
 def prj(v, eta, beta):
@@ -138,6 +178,17 @@ def plot(x, loop, ch, fig, ax, im, bg):
     ax.draw_artist(im)
     fig.canvas.blit(fig.bbox)
     fig.canvas.flush_events()
+
+
+def read_materials(input_path):
+    material_df = pd.read_excel(input_path, sheet_name='Materials')
+    D = material_df['Density'].tolist()
+    E = material_df['Elasticity'].tolist()
+    P = material_df['Price'].tolist()
+    nu = material_df['Poisson'].tolist()
+    M_name = material_df['Material'].tolist()
+    M_color = material_df['Color'].tolist()
+    return D, E, P, nu, M_name, M_color
 
 
 def read_options(input_path):

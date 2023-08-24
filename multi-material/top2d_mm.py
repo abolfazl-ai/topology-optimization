@@ -140,7 +140,7 @@ def element_stiffness(nx, ny, nu):
 
 
 def init_fig(x, D, colors, names):
-    plt.ion()  # Ensure that redrawing is possible
+    plt.ion()
     fig, ax = plt.subplots()
     cmap = mc.LinearSegmentedColormap.from_list('mesh', list(zip(D, colors)))
     custom_lines = [Line2D([0], [0], marker='o', label='Scatter',

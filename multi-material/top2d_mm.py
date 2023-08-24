@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.colors as mc
+from matplotlib.lines import Line2D
 import pandas as pd
 from scipy.ndimage import correlate
 from scipy.sparse import csc_matrix
@@ -25,7 +26,7 @@ def top2d_mm(input_path='input.xlsx'):
     x[pasS] = 1
     xPhys, xOld, ch, loop, U = x.copy(), 1, 1, 0, np.zeros((nDof, 1))
     #   ________________________________________________________________
-    fig, ax, im, bg = init_fig(np.reshape(xPhys, (ny, nx), 'F'), D, M_color)
+    fig, ax, im, bg = init_fig(np.reshape(xPhys, (ny, nx), 'F'), D, M_color, M_name)
     start = time.time()
     while ch > 1e-4 and loop < max_it:
         loop += 1
@@ -138,12 +139,15 @@ def element_stiffness(nx, ny, nu):
     return Ke, Ke0, cMat, Iar
 
 
-def init_fig(x, D, colors):
+def init_fig(x, D, colors, names):
     plt.ion()  # Ensure that redrawing is possible
     fig, ax = plt.subplots()
     cmap = mc.LinearSegmentedColormap.from_list('mesh', list(zip(D, colors)))
+    custom_lines = [Line2D([0], [0], marker='o', label='Scatter',
+                           lw=0, markerfacecolor=c, markersize=10) for c in colors]
     im = ax.imshow(x, cmap=cmap, vmin=0, vmax=1)
     ax.set_title(F'Iteration: {0}, Change: {1:0.4f}')
+    ax.legend(custom_lines, names, ncol=len(colors), bbox_to_anchor=(0.8, -0.15))
     plt.pause(0.1)
     bg = fig.canvas.copy_from_bbox(fig.bbox)
     ax.draw_artist(im)

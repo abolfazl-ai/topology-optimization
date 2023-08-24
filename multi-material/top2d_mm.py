@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.colors as mc
 import pandas as pd
 from scipy.ndimage import correlate
 from scipy.sparse import csc_matrix
@@ -24,7 +25,7 @@ def top2d_mm(input_path='input.xlsx'):
     x[pasS] = 1
     xPhys, xOld, ch, loop, U = x.copy(), 1, 1, 0, np.zeros((nDof, 1))
     #   ________________________________________________________________
-    fig, ax, im, bg = init_fig(1 - np.reshape(xPhys, (ny, nx), 'F'))
+    fig, ax, im, bg = init_fig(1 - np.reshape(xPhys, (ny, nx), 'F'), D, M_color)
     start = time.time()
     while ch > 1e-4 and loop < max_it:
         loop += 1
@@ -41,7 +42,7 @@ def top2d_mm(input_path='input.xlsx'):
         xOld = xPhys.copy()
         #   ________________________________________________________________
         E_, dE_ = ordered_simp_interpolation(xPhys, penal, D, E)
-        P_, dP_ = ordered_simp_interpolation(xPhys, 1 / penal, D, P)
+        # E_, dE_ = simp_interpolation(xPhys, penal, E[0], E[-1])
         sK = ((Ke[np.newaxis]).T * E_).flatten(order='F')
         K = csc_matrix((sK, (Iar[:, 0], Iar[:, 1])), shape=(nDof, nDof))[free, :][:, free].tocoo()
         U, B = np.zeros(nDof), F[free, 0]
@@ -64,42 +65,20 @@ def top2d_mm(input_path='input.xlsx'):
     plt.show(block=True)
 
 
-def oc(n_elx, n_ely, vol_frac, x, cost_frac, dc, P_, dP_, loop, MinMove):
-    Temp = -dc / (P_ + x * dP_)
-    lV1, lV2, lP1, lP2 = 0.0, 2 * np.max(-dc), 0.0, 2 * np.max(Temp)
-    move = max(0.15 * 0.96 ** loop, MinMove)
-    x_new = np.zeros(x.shape)
-    while ((lV2 - lV1) / (lV1 + lV2) > 1e-6) or ((lP2 - lP1) / (lP1 + lP2) > 1e-6):
-        lmidV = 0.5 * (lV2 + lV1)
-        lmidP = 0.5 * (lP2 + lP1)
-        Temp = lmidV + lmidP * P_ + lmidP * x * dP_
-        Coef = -dc / Temp
-        Coef = np.abs(Coef)
-        x_new = np.maximum(10 ** -5, np.maximum(x - move, np.minimum(1., np.minimum(x + move, x * np.sqrt(Coef)))))
-        if np.sum(x_new) - vol_frac * n_elx * n_ely > 0:
-            lV1 = lmidV
-        else:
-            lV2 = lmidV
-
-        CurrentCostFrac = np.sum(x_new * P_) / (n_elx * n_ely)
-        if CurrentCostFrac - cost_frac > 0:
-            lP1 = lmidP
-        else:
-            lP2 = lmidP
-
-    return x_new
+def simp_interpolation(x, penal, Y_min, Y_max):
+    y = Y_min + x ** penal * (Y_max - Y_min)
+    dy = penal * (Y_max - Y_min) * x ** (penal - 1)
+    return y, dy
 
 
 def ordered_simp_interpolation(x, penal, X, Y):
-    y, dy = np.zeros(x.shape), np.zeros(x.shape)
-    for i, xi in enumerate(x):
-        for j in range(len(X)):
-            if (X[j] < xi) and (X[j + 1] >= xi):
-                A = (Y[j] - Y[j + 1]) / (X[j] ** penal - X[j + 1] ** penal)
-                B = Y[j] - A * (X[j] ** penal)
-                y[i] = max(A * (xi ** penal) + B, min(Y))
-                dy[i] = A * penal * (xi ** (penal - 1))
-
+    y, dy = np.ones(x.shape), np.zeros(x.shape)
+    for i in range(len(X) - 1):
+        mask = ((X[i] < x) if i > 0 else True) & (x < X[i + 1] if i < len(X) - 2 else True)
+        A = (Y[i] - Y[i + 1]) / (X[i] ** penal - X[i + 1] ** penal)
+        B = Y[i] - A * (X[i] ** penal)
+        y[mask] = A * (x[mask] ** penal) + B
+        dy[mask] = A * penal * (x[mask] ** (penal - 1))
     return y, dy
 
 
@@ -159,10 +138,11 @@ def element_stiffness(nx, ny, nu):
     return Ke, Ke0, cMat, Iar
 
 
-def init_fig(x):
+def init_fig(x, D, colors):
     plt.ion()  # Ensure that redrawing is possible
     fig, ax = plt.subplots()
-    im = ax.imshow(x, cmap='gray', vmin=0, vmax=1)
+    cmap = mc.LinearSegmentedColormap.from_list('mesh', list(zip(D, colors)))
+    im = ax.imshow(x, cmap=cmap, vmin=0, vmax=1)
     ax.set_title(F'Iteration: {0}, Change: {1:0.4f}')
     plt.pause(0.1)
     bg = fig.canvas.copy_from_bbox(fig.bbox)

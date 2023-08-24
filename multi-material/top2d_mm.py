@@ -43,7 +43,7 @@ def top2d_mm(input_path='input.xlsx'):
         xOld = xPhys.copy()
         #   ________________________________________________________________
         E_, dE_ = ordered_simp_interpolation(xPhys, penal, D, E)
-        # E_, dE_ = simp_interpolation(xPhys, penal, E[0], E[-1])
+        P_, dP_ = ordered_simp_interpolation(xPhys, penal, D, P)
         sK = ((Ke[np.newaxis]).T * E_).flatten(order='F')
         K = csc_matrix((sK, (Iar[:, 0], Iar[:, 1])), shape=(nDof, nDof))[free, :][:, free].tocoo()
         U, B = np.zeros(nDof), F[free, 0]
@@ -56,6 +56,8 @@ def top2d_mm(input_path='input.xlsx'):
         dV0 = correlate(np.reshape(dV, (ny, nx), 'F') / dHs, h, mode='reflect').flatten(order='F')
         #   ________________________________________________________________
         x = optimality_criterion(x, vol_f, act, move, dc, dV0)
+        # x = oc(nx, ny, x, vol_f, 0.3, dc, P_, dP_, move)
+        # x = optimality_criterion2(nx, ny, x, act, vol_f, 0.3, dc, dV0, P_, dP_, move)
         penal, beta = cnt(penal, penalCnt, loop), cnt(beta, betaCnt, loop)
         #   ________________________________________________________________
         print(f'Iteration = {loop}, Change = {ch:0.5f}')
@@ -83,6 +85,65 @@ def ordered_simp_interpolation(x, penal, X, Y):
     return y, dy
 
 
+def optimality_criterion(x, vol_f, act, move, dc, dV0):
+    x_new, xT = x.copy(), x[act]
+    xU, xL = xT + move, xT - move
+    ocP = xT * np.real(np.sqrt(-dc[act] / dV0[act]))
+    LM = [0, np.mean(ocP) / vol_f]
+    while abs((LM[1] - LM[0]) / (LM[1] + LM[0])) > 1e-4:
+        l_mid = 0.5 * (LM[0] + LM[1])
+        x_new[act] = np.maximum(np.minimum(np.minimum(ocP / l_mid, xU), 1), xL)
+        LM[0], LM[1] = (l_mid, LM[1]) if np.mean(x_new) > vol_f else (LM[0], l_mid)
+    return x_new
+
+
+def optimality_criterion2(nx, ny, x, act, vol_f, cost_f, dc, dV0, P_, dP_, move):
+    x_new, xT = x.copy(), x[act]
+    xU, xL = xT + move, xT - move
+    ocP = xT * np.real(np.sqrt(-dc[act] / dV0[act]))
+    LV = [0, np.max(-dc) / vol_f]
+    LP = [0, np.max(-dc / (P_ + x * dP_)) / vol_f]
+    while abs((LV[1] - LV[0]) / (LV[1] + LV[0])) > 1e-4 or abs((LP[1] - LP[0]) / (LP[1] + LP[0])) > 1e-4:
+        l_mid_v, l_mid_p = 0.5 * (LV[0] + LV[1]), 0.5 * (LP[0] + LP[1])
+        x_new[act] = np.maximum(np.maximum(np.minimum(np.minimum(
+            ocP / (l_mid_v + l_mid_p * P_ + l_mid_p * x * dP_), xU), 1), xL), 1E-5)
+        LV[0], LV[1] = (l_mid_v, LV[1]) if np.mean(x_new) > vol_f else (LV[0], l_mid_v)
+        LP[0], LP[1] = (l_mid_p, LP[1]) if np.sum(x_new * P_) / (nx * ny) > cost_f else (LP[0], l_mid_p)
+    return x_new
+
+
+def oc(nx, ny, x, vol_f, cost_f, dc, P_, dP_, move):
+    dc = -1 * dc
+    lV1 = 0
+    lV2 = 2 * np.max(dc)
+    Temp = P_ + x * dP_
+    Temp = dc / Temp
+    lP1 = 0
+    lP2 = 2 * np.max(Temp)
+
+    while ((lV2 - lV1) / (lV1 + lV2) > 1e-6) or ((lP2 - lP1) / (lP1 + lP2) > 1e-6):
+        lmidV = 0.5 * (lV2 + lV1)
+        lmidP = 0.5 * (lP2 + lP1)
+        Temp = lmidV + lmidP * P_ + lmidP * x * dP_
+        Coef = dc / Temp
+        Coef = np.abs(Coef)
+        xnew = np.maximum(10 ** -5, np.maximum(x - move, np.minimum(1., np.minimum(x + move, x * np.sqrt(Coef)))))
+
+        if np.sum(xnew) - vol_f * nx * ny > 0:
+            lV1 = lmidV
+        else:
+            lV2 = lmidV
+
+        CurrentCostFrac = np.sum(xnew * P_) / (nx * ny)
+
+        if CurrentCostFrac - cost_f > 0:
+            lP1 = lmidP
+        else:
+            lP2 = lmidP
+
+    return xnew
+
+
 def prj(v, eta, beta):
     return (np.tanh(beta * eta) + np.tanh(beta * (v - eta))) / (np.tanh(beta * eta) + np.tanh(beta * (1 - eta)))
 
@@ -107,18 +168,6 @@ def prepare_filter(ny, nx, r_min):
     h = np.maximum(0, r_min - np.sqrt(dx ** 2 + dy ** 2))
     Hs = correlate(np.ones((ny, nx)), h, mode='reflect')
     return h, Hs, Hs.copy()
-
-
-def optimality_criterion(x, vol_f, act, move, dc, dV0):
-    x_new, xT = x.copy(), x[act]
-    xU, xL = xT + move, xT - move
-    ocP = xT * np.real(np.sqrt(-dc[act] / dV0[act]))
-    LM = [0, np.mean(ocP) / vol_f]
-    while abs((LM[1] - LM[0]) / (LM[1] + LM[0])) > 1e-4:
-        l_mid = 0.5 * (LM[0] + LM[1])
-        x_new[act] = np.maximum(np.minimum(np.minimum(ocP / l_mid, xU), 1), xL)
-        LM[0], LM[1] = (l_mid, LM[1]) if np.mean(x_new) > vol_f else (LM[0], l_mid)
-    return x_new
 
 
 def element_stiffness(nx, ny, nu):

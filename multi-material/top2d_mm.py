@@ -25,7 +25,7 @@ def top2d_mm(input_path='input.xlsx'):
     x[pasS] = 1
     xPhys, xOld, ch, loop, U = x.copy(), 1, 1, 0, np.zeros((nDof, 1))
     #   ________________________________________________________________
-    fig, ax, im, bg = init_fig(1 - np.reshape(xPhys, (ny, nx), 'F'), D, M_color)
+    fig, ax, im, bg = init_fig(np.reshape(xPhys, (ny, nx), 'F'), D, M_color)
     start = time.time()
     while ch > 1e-4 and loop < max_it:
         loop += 1
@@ -58,7 +58,7 @@ def top2d_mm(input_path='input.xlsx'):
         penal, beta = cnt(penal, penalCnt, loop), cnt(beta, betaCnt, loop)
         #   ________________________________________________________________
         print(f'Iteration = {loop}, Change = {ch:0.5f}')
-        plot(1 - np.reshape(xPhys, (ny, nx), 'F'), loop, ch, fig, ax, im, bg)
+        plot(np.reshape(xPhys, (ny, nx), 'F'), loop, ch, fig, ax, im, bg)
 
     print(f'Model converged in {(time.time() - start):0.2f} seconds')
     ax.set_title(F'Iteration: {loop} | Model converged in {(time.time() - start):0.1f} seconds')

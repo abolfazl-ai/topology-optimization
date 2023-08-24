@@ -147,7 +147,8 @@ def init_fig(x, D, colors, names):
                            lw=0, markerfacecolor=c, markersize=10) for c in colors]
     im = ax.imshow(x, cmap=cmap, vmin=0, vmax=1)
     ax.set_title(F'Iteration: {0}, Change: {1:0.4f}')
-    ax.legend(custom_lines, names, ncol=len(colors), bbox_to_anchor=(0.8, -0.15))
+    ax.legend(custom_lines, names, ncol=len(colors))  # , bbox_to_anchor=(0.8, -0.15)
+    plt.get_current_fig_manager().window.showMaximized()
     plt.pause(0.1)
     bg = fig.canvas.copy_from_bbox(fig.bbox)
     ax.draw_artist(im)

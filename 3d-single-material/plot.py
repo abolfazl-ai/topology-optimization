@@ -4,7 +4,7 @@ import numpy as np
 
 
 def plot_result(result, densities, colors, section_percentage=0):
-    voxel_array = result > 0.2
+    voxel_array = result > 0.6
     plot_colors = np.empty(voxel_array.shape, dtype=object)
     sec_colors = [(0, "white")]
     for i, d in enumerate(densities):

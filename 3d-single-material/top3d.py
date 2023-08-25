@@ -33,7 +33,7 @@ def top3d(input_path='input.xlsx'):
     xPhys, xOld, ch, loop, U = x.copy(), 1, 1, 0, np.zeros((nDof, 1))
     #   ________________________________________________________________
     start = time.time()
-    while ch > 1e-4 and loop < max_it:
+    while ch > 1e-6 and loop < max_it:
         loop += 1
         xTilde = correlate(np.reshape(x, (ny, nz, nx), 'F'), h, mode='reflect') / Hs
         xPhys[act] = xTilde.flatten(order='F')[act]
@@ -65,7 +65,7 @@ def top3d(input_path='input.xlsx'):
         print(f'Iteration = {loop}, Change = {ch:0.5f}')
 
     print(f'Model converged in {(time.time() - start):0.2f} seconds')
-    plot_result(np.reshape(xPhys, (ny, nz, nx), 'F'), [1, ], ['red', ])
+    plot_result(np.reshape(xPhys, (ny, nz, nx), 'F'), [1, ], ['black', ])
 
 
 def prj(v, eta, beta):

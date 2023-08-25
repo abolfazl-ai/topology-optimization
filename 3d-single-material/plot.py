@@ -4,11 +4,11 @@ import numpy as np
 
 
 def plot_result(result, densities, colors, section_percentage=0):
-    voxel_array = result > 0
+    voxel_array = result > 0.2
     plot_colors = np.empty(voxel_array.shape, dtype=object)
     sec_colors = [(0, "white")]
     for i, d in enumerate(densities):
-        plot_colors[result == d] = colors[i]
+        plot_colors = colors[i]
         sec_colors.append((d / np.max(densities), colors[i]))
 
     section = result[:, min(int(np.floor(section_percentage * result.shape[2] / 100)), result.shape[2] - 1), :]
@@ -29,8 +29,8 @@ def plot_result(result, densities, colors, section_percentage=0):
     plt.show()
 
 
-xx = np.random.randint(0, 5, size=(10, 10, 10))
-xx[xx < 3] = 0
-dd = [1, 2, 3, 4]
-cc = ['red', 'blue', 'green', 'orange']
-plot_result(xx, dd, cc)
+# xx = np.random.randint(0, 5, size=(30, 30, 30))
+# xx[xx < 3] = 0
+# dd = [1, 2, 3, 4]
+# cc = ['red', 'blue', 'green', 'orange']
+# plot_result(xx, dd, cc)

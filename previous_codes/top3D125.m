@@ -52,8 +52,8 @@ Ke0 = Ke0 + Ke0' - diag( diag( Ke0 ) );                                    % rec
 lcDof = 3 * nodeNrs( 1 : nely + 1, 1, nelx + 1 );
 fixed = 1 : 3 * ( nely + 1 ) * ( nelz + 1 );
 [ pasS, pasV ] = deal( [], [] );                                           % passive solid and void elements
-F = fsparse( lcDof, 1, -sin((0:nely)/nely*pi)', [ nDof, 1 ] );             % define load vector
 free = setdiff( 1 : nDof, fixed );                                         % set of free DOFs
+F = sparse( lcDof, int32(ones(length(lcDof),1)), -sin((0:nely)/nely*pi)', nDof, 1 );             % define load vector
 act = setdiff( ( 1 : nEl )', union( pasS, pasV ) );                        % set of active d.v.
 % --------------------------------------- PRE. 4) DEFINE IMPLICIT FUNCTIONS
 prj = @(v,eta,beta) (tanh(beta*eta)+tanh(beta*(v(:)-eta)))./...
@@ -95,7 +95,7 @@ while ch > 1e-6 && loop < maxit
   sK = ( Emin + xPhys.^penal * ( E0 - Emin ) );
   dsK( act ) = -penal * ( E0 - Emin ) * xPhys( act ) .^ ( penal - 1 );
   sK = reshape( Ke( : ) * sK', length( Ke ) * nEl, 1 );
-  K = fsparse( Iar( :, 1 ), Iar( :, 2 ), sK, [ nDof, nDof ] );
+  K = sparse( Iar( :, 1 ), Iar( :, 2 ), sK, nDof, nDof  );
   L = chol( K( free, free ), 'lower' );
   U( free ) = L' \ ( L \ F( free ) );                                      % f/b substitution
   % ------------------------------------------ RL. 3) COMPUTE SENSITIVITIES

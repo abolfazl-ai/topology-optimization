@@ -57,44 +57,33 @@ from vedo import *
 import trimesh
 
 
-def plot_isosurface_3d(result, m_densities, m_colors):
+def plot_isosurface_3d(x, m_d, m_c, thresh):
     meshes = []
-    for i, md in enumerate(m_densities):
-        array = np.zeros(result.shape)
-        array[(result > 0.5) & (result < 0.8)] = 1
+    for i, d in enumerate(m_d):
+        array = np.zeros(x.shape)
+        array[(x > ((m_d[i - 1] + d) / 2 if i > 0 else thresh)) &
+              (x < (m_d[i + 1] + d) / 2 if i < len(m_d) - 1 else True)] = 1
+        voxel = trimesh.voxel.VoxelGrid(array).as_boxes()
+        meshes.append(Mesh([voxel.vertices, voxel.faces], c=m_c[i]))
 
-    red, blue = np.zeros(result.shape), np.zeros(result.shape)
-    red[(result > 0.5) & (result < 0.8)] = 1
-    blue[result > 0.8] = 1
-    red_voxel = trimesh.voxel.VoxelGrid(red).as_boxes()
-    blue_voxel = trimesh.voxel.VoxelGrid(blue).as_boxes()
-    red_mesh = Mesh([red_voxel.vertices, red_voxel.faces], c='red')
-    blue_mesh = Mesh([blue_voxel.vertices, blue_voxel.faces], c='blue')
-
-    # cut_mesh1 = red_mesh.cut_with_plane(origin=(0, 10, 0), normal=(0, 1, 0))
-    # cut_mesh2 = blue_mesh.cut_with_plane(origin=(0, 10, 0), normal=(0, 1, 0))
-
-    # vol = Volume(array)
-    # lego = vol.legosurface(iso_value, 1)
-    # vertices, faces, _, _ = marching_cubes(array, level=iso_value)
-    # trimesh_mesh = trimesh.Trimesh(vertices=vertices, faces=faces)
-    # trimesh_mesh = trimesh.Trimesh(vertices=lego.points(), faces=lego.faces())
-    # solid = trimesh_mesh.voxelized(pitch=0.1).to_mesh()
+    show_meshes = meshes.copy()
 
     def update_cut_plane(obj, event):
         print(f'normal={obj.GetNormal()}, origin={obj.GetOrigin()}')
-        blue_mesh.cut_with_plane(normal=obj.GetNormal(), origin=obj.GetOrigin())
+        for j, m in enumerate(show_meshes):
+            m.cut_with_plane(normal=obj.GetNormal(), origin=obj.GetOrigin())
 
+    cutter = PlaneCutter(meshes[0],normal=(0, 1, 0), can_translate=False)
+    s = cutter.clipper.GetInput()
+    # cutter.widget.AddObserver("InteractionEvent", update_cut_plane)
     plot = Plotter(interactive=False)
-    cutter = PlaneCutter(red_mesh, normal=(0, 1, 0), can_translate=False)
-    cutter.widget.AddObserver("InteractionEvent", update_cut_plane)
-    # blue_mesh.cut_with_plane(normal=cutter.GetNormal(), origin=cutter.GetOrigin())
-    print(f'normal={cutter.GetNormal()}, origin={cutter.GetOrigin()}')
-    plot.show(red_mesh, blue_mesh)
+    plot.show(meshes)
     plot.add(cutter)
     plot.interactive()
 
 
 df = pd.read_excel('xs.xlsx', engine='openpyxl')
 data = df.values
-plot_isosurface_3d(np.reshape(data, (30, 30, 30), 'F'))
+plot_isosurface_3d(np.reshape(data, (30, 30, 30), 'F'),
+                   [0.6, 0.8, 1],
+                   ['red', 'blue', 'green'], 0.5)

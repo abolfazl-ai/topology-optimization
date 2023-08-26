@@ -33,7 +33,7 @@ def top3d(input_path='input.xlsx'):
     xPhys, xOld, ch, loop, U = x.copy(), 1, 1, 0, np.zeros((nDof, 1))
     #   ________________________________________________________________
     start = time.time()
-    while ch > 1e-6 and loop < max_it:
+    while ch > 1e-5 and loop < max_it:
         loop += 1
         xTilde = correlate(np.reshape(x, (ny, nz, nx), 'F'), h, mode='reflect') / Hs
         xPhys[act] = xTilde.flatten(order='F')[act]
@@ -62,10 +62,13 @@ def top3d(input_path='input.xlsx'):
         x = optimality_criterion(x, vol_f, act, move, dc, dV0)
         penal, beta = cnt(penal, penalCnt, loop), cnt(beta, betaCnt, loop)
         #   ________________________________________________________________
-        print(f'Iteration = {loop}, Change = {ch:0.5f}')
+        print(f'Iteration = {loop}, Change = {ch:0.6f}')
+
+    df = pd.DataFrame(xPhys)
+    df.to_excel('x.xlsx', index=False)
 
     print(f'Model converged in {(time.time() - start):0.2f} seconds')
-    plot_result(np.reshape(xPhys, (ny, nz, nx), 'F'), [1, ], ['black', ])
+    plot_result(np.reshape(xPhys, (ny, nz, nx), 'F'), [1, ], ['orange', ])
 
 
 def prj(v, eta, beta):
@@ -162,7 +165,7 @@ def init_fig(x):
     plt.ion()
     fig, ax = plt.subplots()
     im = ax.imshow(x, cmap='gray', vmin=0, vmax=1)
-    ax.set_title(F'Iteration: {0}, Change: {1:0.4f}')
+    ax.set_title(F'Iteration: {0}, Change: {1:0.6f}')
     plt.pause(0.1)
     bg = fig.canvas.copy_from_bbox(fig.bbox)
     ax.draw_artist(im)
@@ -173,7 +176,7 @@ def init_fig(x):
 def plot(x, loop, ch, fig, ax, im, bg):
     fig.canvas.restore_region(bg)
     im.set_array(x)
-    ax.set_title(F'Iteration: {loop}, Change: {ch:0.5f}')
+    ax.set_title(F'Iteration: {loop}, Change: {ch:0.6f}')
     ax.draw_artist(im)
     fig.canvas.blit(fig.bbox)
     fig.canvas.flush_events()

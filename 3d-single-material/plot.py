@@ -1,6 +1,8 @@
 import matplotlib.pyplot as plt
+import pandas as pd
 from matplotlib.colors import LinearSegmentedColormap
 import numpy as np
+from skimage.measure import marching_cubes
 
 
 def plot_result(result, densities, colors, section_percentage=0):
@@ -34,3 +36,48 @@ def plot_result(result, densities, colors, section_percentage=0):
 # dd = [1, 2, 3, 4]
 # cc = ['red', 'blue', 'green', 'orange']
 # plot_result(xx, dd, cc)
+
+def plot_3d(array, iso_value=0.5):
+    verts, faces, _, _ = marching_cubes(array, level=iso_value)
+
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+
+    ax.plot_trisurf(verts[:, 0], verts[:, 1], faces, verts[:, 2], cmap='viridis', edgecolor='none')
+
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
+    ax.set_zlabel('Z')
+
+    plt.show()
+
+
+from vedo import *
+import trimesh
+
+def plot_isosurface_3d(array, iso_value=0.5):
+    vol = Volume(array).smooth_gaussian()
+    lego = vol.legosurface(iso_value, 1)
+    vertices, faces, _, _ = marching_cubes(array, level=iso_value)
+    # trimesh_mesh = trimesh.Trimesh(vertices=lego.points(), faces=lego.faces())
+    trimesh_mesh = trimesh.Trimesh(vertices=vertices, faces=faces)
+    solid = trimesh_mesh.voxelized(pitch=0.1)
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    occupied_voxels = np.array(np.where(solid))
+    ax.scatter(occupied_voxels[0], occupied_voxels[1], occupied_voxels[2], c='b', marker='o', alpha=0.5)
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
+    ax.set_zlabel('Z')
+    plt.show()
+
+    # plot = Plotter(interactive=False)
+    # plot.show(solid)
+    # cutter = PlaneCutter(solid, normal=(0, 1, 0))
+    # plot.add(cutter)
+    # plot.interactive()
+
+
+df = pd.read_excel('xs.xlsx', engine='openpyxl')
+data = df.values
+plot_isosurface_3d(np.reshape(data, (30, 30, 30), 'F'))

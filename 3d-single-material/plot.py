@@ -1,5 +1,6 @@
 import matplotlib.pyplot as plt
 import pandas as pd
+import vtk
 from matplotlib.colors import LinearSegmentedColormap
 import numpy as np
 from skimage.measure import marching_cubes
@@ -55,27 +56,43 @@ def plot_3d(array, iso_value=0.5):
 from vedo import *
 import trimesh
 
-def plot_isosurface_3d(array, iso_value=0.5):
-    vol = Volume(array).smooth_gaussian()
-    lego = vol.legosurface(iso_value, 1)
-    vertices, faces, _, _ = marching_cubes(array, level=iso_value)
-    # trimesh_mesh = trimesh.Trimesh(vertices=lego.points(), faces=lego.faces())
-    trimesh_mesh = trimesh.Trimesh(vertices=vertices, faces=faces)
-    solid = trimesh_mesh.voxelized(pitch=0.1)
-    fig = plt.figure()
-    ax = fig.add_subplot(111, projection='3d')
-    occupied_voxels = np.array(np.where(solid))
-    ax.scatter(occupied_voxels[0], occupied_voxels[1], occupied_voxels[2], c='b', marker='o', alpha=0.5)
-    ax.set_xlabel('X')
-    ax.set_ylabel('Y')
-    ax.set_zlabel('Z')
-    plt.show()
 
-    # plot = Plotter(interactive=False)
-    # plot.show(solid)
-    # cutter = PlaneCutter(solid, normal=(0, 1, 0))
-    # plot.add(cutter)
-    # plot.interactive()
+def plot_isosurface_3d(result, m_densities, m_colors):
+    meshes = []
+    for i, md in enumerate(m_densities):
+        array = np.zeros(result.shape)
+        array[(result > 0.5) & (result < 0.8)] = 1
+
+    red, blue = np.zeros(result.shape), np.zeros(result.shape)
+    red[(result > 0.5) & (result < 0.8)] = 1
+    blue[result > 0.8] = 1
+    red_voxel = trimesh.voxel.VoxelGrid(red).as_boxes()
+    blue_voxel = trimesh.voxel.VoxelGrid(blue).as_boxes()
+    red_mesh = Mesh([red_voxel.vertices, red_voxel.faces], c='red')
+    blue_mesh = Mesh([blue_voxel.vertices, blue_voxel.faces], c='blue')
+
+    # cut_mesh1 = red_mesh.cut_with_plane(origin=(0, 10, 0), normal=(0, 1, 0))
+    # cut_mesh2 = blue_mesh.cut_with_plane(origin=(0, 10, 0), normal=(0, 1, 0))
+
+    # vol = Volume(array)
+    # lego = vol.legosurface(iso_value, 1)
+    # vertices, faces, _, _ = marching_cubes(array, level=iso_value)
+    # trimesh_mesh = trimesh.Trimesh(vertices=vertices, faces=faces)
+    # trimesh_mesh = trimesh.Trimesh(vertices=lego.points(), faces=lego.faces())
+    # solid = trimesh_mesh.voxelized(pitch=0.1).to_mesh()
+
+    def update_cut_plane(obj, event):
+        print(f'normal={obj.GetNormal()}, origin={obj.GetOrigin()}')
+        blue_mesh.cut_with_plane(normal=obj.GetNormal(), origin=obj.GetOrigin())
+
+    plot = Plotter(interactive=False)
+    cutter = PlaneCutter(red_mesh, normal=(0, 1, 0), can_translate=False)
+    cutter.widget.AddObserver("InteractionEvent", update_cut_plane)
+    # blue_mesh.cut_with_plane(normal=cutter.GetNormal(), origin=cutter.GetOrigin())
+    print(f'normal={cutter.GetNormal()}, origin={cutter.GetOrigin()}')
+    plot.show(red_mesh, blue_mesh)
+    plot.add(cutter)
+    plot.interactive()
 
 
 df = pd.read_excel('xs.xlsx', engine='openpyxl')

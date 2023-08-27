@@ -1,11 +1,10 @@
 import time
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from cvxopt import cholmod, matrix, spmatrix
 from scipy.ndimage import correlate
 from scipy.sparse import csc_matrix
-from plot import plot_result
+from plot import plot_3d
 
 
 def top3d(input_path='input.xlsx'):
@@ -33,7 +32,7 @@ def top3d(input_path='input.xlsx'):
     xPhys, xOld, ch, loop, U = x.copy(), 1, 1, 0, np.zeros((nDof, 1))
     #   ________________________________________________________________
     start = time.time()
-    while ch > 1e-5 and loop < max_it:
+    while ch > 1e-4 and loop < max_it:
         loop += 1
         xTilde = correlate(np.reshape(x, (ny, nz, nx), 'F'), h, mode='reflect') / Hs
         xPhys[act] = xTilde.flatten(order='F')[act]
@@ -64,11 +63,10 @@ def top3d(input_path='input.xlsx'):
         #   ________________________________________________________________
         print(f'Iteration = {loop}, Change = {ch:0.6f}')
 
-    df = pd.DataFrame(xPhys)
-    df.to_excel('x.xlsx', index=False)
+    np.save('x.npy', np.reshape(xPhys, (ny, nz, nx), 'F'))
 
     print(f'Model converged in {(time.time() - start):0.2f} seconds')
-    plot_result(np.reshape(xPhys, (ny, nz, nx), 'F'), [1, ], ['orange', ])
+    plot_3d(np.reshape(xPhys, (ny, nz, nx), 'F'), [1, ], ['Solid', ], ['gray', ])
 
 
 def prj(v, eta, beta):
@@ -159,27 +157,6 @@ def element_stiffness(nx, ny, nz, nu):
     Ke0[np.triu_indices(24)] = Ke
     Ke0 = Ke0 + Ke0.T - np.diag(np.diag(Ke0))
     return Ke, Ke0, cMat, Iar
-
-
-def init_fig(x):
-    plt.ion()
-    fig, ax = plt.subplots()
-    im = ax.imshow(x, cmap='gray', vmin=0, vmax=1)
-    ax.set_title(F'Iteration: {0}, Change: {1:0.6f}')
-    plt.pause(0.1)
-    bg = fig.canvas.copy_from_bbox(fig.bbox)
-    ax.draw_artist(im)
-    fig.canvas.blit(fig.bbox)
-    return fig, ax, im, bg
-
-
-def plot(x, loop, ch, fig, ax, im, bg):
-    fig.canvas.restore_region(bg)
-    im.set_array(x)
-    ax.set_title(F'Iteration: {loop}, Change: {ch:0.6f}')
-    ax.draw_artist(im)
-    fig.canvas.blit(fig.bbox)
-    fig.canvas.flush_events()
 
 
 def read_options(input_path):

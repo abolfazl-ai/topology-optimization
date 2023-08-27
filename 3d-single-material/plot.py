@@ -67,13 +67,14 @@ def plot_isosurface_3d(x, m_d, m_c, thresh):
         meshes.append(Mesh([voxel.vertices, voxel.faces], c=m_c[i]))
 
     show_meshes = meshes.copy()
+    iii = False
 
     def update_cut_plane(obj, event):
         print(f'normal={obj.GetNormal()}, origin={obj.GetOrigin()}')
         for j, m in enumerate(show_meshes):
             m.cut_with_plane(normal=obj.GetNormal(), origin=obj.GetOrigin())
 
-    cutter = PlaneCutter(meshes[0],normal=(0, 1, 0), can_translate=False)
+    cutter = PlaneCutter(meshes[0], normal=(0, 1, 0), can_translate=False)
     s = cutter.clipper.GetInput()
     # cutter.widget.AddObserver("InteractionEvent", update_cut_plane)
     plot = Plotter(interactive=False)

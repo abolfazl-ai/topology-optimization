@@ -61,12 +61,13 @@ def top3d(input_path='input.xlsx'):
         x = optimality_criterion(x, vol_f, act, move, dc, dV0)
         penal, beta = cnt(penal, penalCnt, loop), cnt(beta, betaCnt, loop)
         #   ________________________________________________________________
-        print(f'Iteration = {loop}, Change = {ch:0.6f}')
-
-    np.save('x.npy', np.reshape(xPhys, (ny, nz, nx), 'F'))
+        print(f"Iteration = {str(loop).rjust(3, '0')}, Change = {ch:0.6f}")
+        np.save('output/it' + str(loop).rjust(3, '0') + '.npy',
+                np.moveaxis(np.reshape(xPhys, (ny, nz, nx), 'F'), -1, 0))
 
     print(f'Model converged in {(time.time() - start):0.2f} seconds')
-    plot_3d(np.reshape(xPhys, (ny, nz, nx), 'F'), [1, ], ['Solid', ], ['gray', ])
+    np.save('output/final.npy', np.moveaxis(np.reshape(xPhys, (ny, nz, nx), 'F'), -1, 0))
+    plot_3d('output/final.npy', [1, ], ['Solid', ], ['gray', ])
 
 
 def prj(v, eta, beta):

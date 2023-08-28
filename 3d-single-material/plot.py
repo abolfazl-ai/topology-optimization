@@ -34,6 +34,7 @@ def plot_3d(path, densities, names, colors):
     p.add_mesh_clip_plane(roi, normal='x', origin=(np.array(x.shape) + 1) ** 2, assign_to_axis='x',
                           invert=True, scalars='Color', cmap=colors, show_scalar_bar=False, name='clip')
     p.subplot(0, 1)
+    p.add_mesh(grid, opacity=0, show_scalar_bar=False)
     p.add_slider_widget(set_threshold, [0, 1], threshold, 'Threshold', (0.1, 0.9), style='modern', fmt='%0.2f')
     p.add_bounding_box()
     p.link_views()

@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 from cvxopt import cholmod, matrix, spmatrix
 from scipy.ndimage import correlate
-from scipy.sparse import csc_matrix, dok_matrix
+from scipy.sparse import csc_matrix
 from plot import plot_3d
 
 
@@ -19,10 +19,9 @@ def top3d(input_path='input.xlsx'):
     Ke, Ke0, cMat, Iar = element_stiffness(nx, ny, nz, nu, node_numbers)
     h, Hs, dHs = prepare_filter(ny, nx, nz, r_min)
     #   ________________________________________________________________
-    x, dE_, dV = np.zeros((ny, nz, nx)), np.zeros((ny, nz, nx)), np.zeros((ny, nz, nx))
+    x, dE_, dV = pres.copy(), np.zeros((ny, nz, nx)), np.zeros((ny, nz, nx))
     dV[mask] = 1 / (nEl * vol_f)
     x[mask] = (vol_f * (nEl - pres[~mask].size)) / pres[mask].size
-    x[~mask] = pres[~mask]
     xPhys, xOld, ch, loop, U = x.copy(), 1, 1, 0, np.zeros((nDof, 1))
     #   ________________________________________________________________
     start = time.time()
@@ -52,7 +51,7 @@ def top3d(input_path='input.xlsx'):
         dc = correlate(np.reshape(dc, (ny, nz, nx), order='F') / dHs, h, mode='reflect')
         dV0 = correlate(np.reshape(dV, (ny, nz, nx), 'F') / dHs, h, mode='reflect')
         #   ________________________________________________________________
-        x = optimality_criterion(x, vol_f, mask, move, dc, dV0)
+        x[mask] = optimality_criterion(x, vol_f, move, dc, dV0)[mask]
         penal, beta = cnt(penal, penalCnt, loop), cnt(beta, betaCnt, loop)
         #   ________________________________________________________________
         print(f"Iteration = {str(loop).rjust(3, '0')}, Change = {ch:0.6f}")
@@ -96,14 +95,14 @@ def prepare_filter(ny, nx, nz, r_min):
     return h, Hs, Hs.copy()
 
 
-def optimality_criterion(x, vol_f, mask, move, dc, dV0):
-    x_new, xT = x.copy(), x[mask]
+def optimality_criterion(x, vol_f, move, dc, dV0):
+    x_new, xT = x.copy(), x.copy()
     xU, xL = xT + move, xT - move
-    ocP = xT * np.real(np.sqrt(-dc[mask] / dV0[mask]))
+    ocP = xT * np.real(np.sqrt(-dc / dV0))
     LM = [0, np.mean(ocP) / vol_f]
     while abs((LM[1] - LM[0]) / (LM[1] + LM[0])) > 1e-4:
         l_mid = 0.5 * (LM[0] + LM[1])
-        x_new[mask] = np.maximum(np.minimum(np.minimum(ocP / l_mid, xU), 1), xL)
+        x_new = np.maximum(np.minimum(np.minimum(ocP / l_mid, xU), 1), xL)
         LM[0], LM[1] = (l_mid, LM[1]) if np.mean(x_new) > vol_f else (LM[0], l_mid)
     return x_new
 
@@ -182,7 +181,8 @@ def read_pres(input_path, nx, ny, nz):
     for _, row in preserved.iterrows():
         start, end = ([float(x) for x in row['StartPosition'].split(',')],
                       [float(x) for x in row['EndPosition'].split(',')])
-        nr = [(int(np.floor(s * n)), int(np.floor(e * n)) + 1) for n, s, e in list(zip((nx, ny, nz), start, end))]
+        nr = [(int(max(min(np.floor(s * n), np.floor(e * n) - 1), 0)), int(np.floor(e * n)) + 1)
+              for n, s, e in list(zip((nx, ny, nz), start, end))]
         mask[nr[1][0]:nr[1][1], nr[2][0]:nr[2][1], nr[0][0]:nr[0][1]] = False
         pres[nr[1][0]:nr[1][1], nr[2][0]:nr[2][1], nr[0][0]:nr[0][1]] = row['Density']
     return pres, mask

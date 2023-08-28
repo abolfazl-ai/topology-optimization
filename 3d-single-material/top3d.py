@@ -4,7 +4,6 @@ import pandas as pd
 from cvxopt import cholmod, matrix, spmatrix
 from scipy.ndimage import correlate
 from scipy.sparse import csc_matrix
-from plot import plot_3d
 
 
 def top3d(input_path='input.xlsx'):
@@ -59,7 +58,6 @@ def top3d(input_path='input.xlsx'):
 
     print(f'Model converged in {(time.time() - start):0.2f} seconds')
     np.save('final.npy', np.moveaxis(xPhys, -1, 0))
-    plot_3d('final.npy', [1, ], ['Solid', ], ['gray', ])
 
 
 def prj(v, eta, beta):

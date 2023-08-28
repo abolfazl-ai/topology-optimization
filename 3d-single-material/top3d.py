@@ -14,22 +14,22 @@ def top3d(input_path='input.xlsx'):
     #   ________________________________________________________________
     node_numbers = np.reshape(range((1 + nx) * (1 + ny) * (1 + nz)), (1 + ny, 1 + nz, 1 + nx), order='F')
     nEl, nDof = nx * ny * nz, (1 + ny) * (1 + nx) * (1 + nz) * 3
-    pasS, pasV, act = read_pres(input_path, nx, ny, nz)
+    pres, mask = read_pres(input_path, nx, ny, nz)
     free, F = read_bc(input_path, nx, ny, nz, node_numbers)
     Ke, Ke0, cMat, Iar = element_stiffness(nx, ny, nz, nu, node_numbers)
     h, Hs, dHs = prepare_filter(ny, nx, nz, r_min)
     #   ________________________________________________________________
-    x, dE_, dV = np.zeros(nEl), np.zeros(nEl), np.zeros(nEl)
-    dV[act] = 1 / (nEl * vol_f)
-    x[act] = (vol_f * (nEl - len(pasV)) - len(pasS)) / len(act)
-    x[pasS] = 1
+    x, dE_, dV = np.zeros((ny, nz, nx)), np.zeros((ny, nz, nx)), np.zeros((ny, nz, nx))
+    dV[mask] = 1 / (nEl * vol_f)
+    x[mask] = (vol_f * (nEl - pres[~mask].size)) / pres[mask].size
+    x[~mask] = pres[~mask]
     xPhys, xOld, ch, loop, U = x.copy(), 1, 1, 0, np.zeros((nDof, 1))
     #   ________________________________________________________________
     start = time.time()
     while ch > 1e-4 and loop < max_it:
         loop += 1
-        xTilde = correlate(np.reshape(x, (ny, nz, nx), 'F'), h, mode='reflect') / Hs
-        xPhys[act] = xTilde.flatten(order='F')[act]
+        xTilde = correlate(x, h, mode='reflect') / Hs
+        xPhys[mask] = xTilde[mask]
         if ft > 1:
             f = (np.mean(prj(xPhys, eta, beta)) - vol_f) * (ft == 3)
             while abs(f) > 1e-6:
@@ -49,17 +49,17 @@ def top3d(input_path='input.xlsx'):
         U[free] = np.array(B)[:, 0]
         #   ________________________________________________________________
         dc = -dE_ * np.sum((U[cMat] @ Ke0) * U[cMat], axis=1)
-        dc = correlate(np.reshape(dc, (ny, nz, nx), order='F') / dHs, h, mode='reflect').flatten(order='F')
-        dV0 = correlate(np.reshape(dV, (ny, nz, nx), 'F') / dHs, h, mode='reflect').flatten(order='F')
+        dc = correlate(np.reshape(dc, (ny, nz, nx), order='F') / dHs, h, mode='reflect')
+        dV0 = correlate(np.reshape(dV, (ny, nz, nx), 'F') / dHs, h, mode='reflect')
         #   ________________________________________________________________
-        x = optimality_criterion(x, vol_f, act, move, dc, dV0)
+        x = optimality_criterion(x, vol_f, mask, move, dc, dV0)
         penal, beta = cnt(penal, penalCnt, loop), cnt(beta, betaCnt, loop)
         #   ________________________________________________________________
         print(f"Iteration = {str(loop).rjust(3, '0')}, Change = {ch:0.6f}")
-        np.save('x.npy', np.moveaxis(np.reshape(xPhys, (ny, nz, nx), 'F'), -1, 0))
+        np.save('x.npy', np.moveaxis(xPhys, -1, 0))
 
     print(f'Model converged in {(time.time() - start):0.2f} seconds')
-    np.save('final.npy', np.moveaxis(np.reshape(xPhys, (ny, nz, nx), 'F'), -1, 0))
+    np.save('final.npy', np.moveaxis(xPhys, -1, 0))
     plot_3d('final.npy', [1, ], ['Solid', ], ['gray', ])
 
 
@@ -84,7 +84,7 @@ def cnt(v, vCnt, el):
 def simp_interpolation(x, penal, Y_min, Y_max):
     y = Y_min + x ** penal * (Y_max - Y_min)
     dy = penal * (Y_max - Y_min) * x ** (penal - 1)
-    return y, dy
+    return y.flatten(order='F'), dy.flatten(order='F')
 
 
 def prepare_filter(ny, nx, nz, r_min):
@@ -96,14 +96,14 @@ def prepare_filter(ny, nx, nz, r_min):
     return h, Hs, Hs.copy()
 
 
-def optimality_criterion(x, vol_f, act, move, dc, dV0):
-    x_new, xT = x.copy(), x[act]
+def optimality_criterion(x, vol_f, mask, move, dc, dV0):
+    x_new, xT = x.copy(), x[mask]
     xU, xL = xT + move, xT - move
-    ocP = xT * np.real(np.sqrt(-dc[act] / dV0[act]))
+    ocP = xT * np.real(np.sqrt(-dc[mask] / dV0[mask]))
     LM = [0, np.mean(ocP) / vol_f]
     while abs((LM[1] - LM[0]) / (LM[1] + LM[0])) > 1e-4:
         l_mid = 0.5 * (LM[0] + LM[1])
-        x_new[act] = np.maximum(np.minimum(np.minimum(ocP / l_mid, xU), 1), xL)
+        x_new[mask] = np.maximum(np.minimum(np.minimum(ocP / l_mid, xU), 1), xL)
         LM[0], LM[1] = (l_mid, LM[1]) if np.mean(x_new) > vol_f else (LM[0], l_mid)
     return x_new
 
@@ -178,14 +178,14 @@ def read_bc(input_path, nx, ny, nz, node_numbers):
 
 def read_pres(input_path, nx, ny, nz):
     preserved = pd.read_excel(input_path, sheet_name='PreservedVolume')
-    pasS, pasV = [], []
+    pres, mask = np.zeros((ny, nz, nx)), np.ones((ny, nz, nx), dtype=bool)
     for _, row in preserved.iterrows():
-        left, right, top, bottom = row['Left'], row['Right'], row['Top'], row['Bottom']
-        elements = [range(int(x * nx * ny + (1 - top) * ny), int(x * nx * ny + (1 - bottom) * ny))
-                    for x in np.arange(left, right, step=1 / nx)]
-        pasS.extend(elements) if row['Density'] == 1 else pasV.extend(elements)
-    act = np.setdiff1d(np.arange(0, nx * ny * nz), np.union1d(np.array(pasS), np.array(pasV))).tolist()
-    return pasS, pasV, act
+        start, end = ([float(x) for x in row['StartPosition'].split(',')],
+                      [float(x) for x in row['EndPosition'].split(',')])
+        nr = [(int(np.floor(s * n)), int(np.floor(e * n)) + 1) for n, s, e in list(zip((nx, ny, nz), start, end))]
+        mask[nr[1][0]:nr[1][1], nr[2][0]:nr[2][1], nr[0][0]:nr[0][1]] = False
+        pres[nr[1][0]:nr[1][1], nr[2][0]:nr[2][1], nr[0][0]:nr[0][1]] = row['Density']
+    return pres, mask
 
 
 top3d()

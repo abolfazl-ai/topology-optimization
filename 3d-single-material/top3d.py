@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 from cvxopt import cholmod, matrix, spmatrix
 from scipy.ndimage import correlate
-from scipy.sparse import csc_matrix
+from scipy.sparse import csc_matrix, dok_matrix
 from plot import plot_3d
 
 
@@ -12,17 +12,11 @@ def top3d(input_path='input.xlsx'):
     E_min, E_max, nu = 1E-9, 1.0, 0.3
     penalCnt, betaCnt = [1, 1, 25, 0.25], [1, 1, 25, 2]
     #   ________________________________________________________________
+    node_numbers = np.reshape(range((1 + nx) * (1 + ny) * (1 + nz)), (1 + ny, 1 + nz, 1 + nx), order='F')
     nEl, nDof = nx * ny * nz, (1 + ny) * (1 + nx) * (1 + nz) * 3
     pasS, pasV, act = read_pres(input_path, nx, ny, nz)
-    # free, F = read_bc(input_path, nx, ny, nDof)
-
-    node_numbers = np.reshape(range((1 + nx) * (1 + ny) * (1 + nz)), (1 + ny, 1 + nz, 1 + nx), order='F')
-    lcDof = 3 * (node_numbers[:, 0, nx] + 1) - 1
-    fixed = np.arange(0, 3 * (ny + 1) * (nz + 1))
-    free = np.setdiff1d(np.arange(0, nDof), fixed).tolist()
-    F = matrix(csc_matrix((-np.sin(np.arange(0, ny + 1) / ny * np.pi),
-                           (lcDof, np.zeros(lcDof.shape, dtype=np.int32))), shape=(nDof, 1)).toarray())
-    Ke, Ke0, cMat, Iar = element_stiffness(nx, ny, nz, nu)
+    free, F = read_bc(input_path, nx, ny, nz, node_numbers)
+    Ke, Ke0, cMat, Iar = element_stiffness(nx, ny, nz, nu, node_numbers)
     h, Hs, dHs = prepare_filter(ny, nx, nz, r_min)
     #   ________________________________________________________________
     x, dE_, dV = np.zeros(nEl), np.zeros(nEl), np.zeros(nEl)
@@ -114,8 +108,7 @@ def optimality_criterion(x, vol_f, act, move, dc, dV0):
     return x_new
 
 
-def element_stiffness(nx, ny, nz, nu):
-    node_numbers = np.reshape(range((1 + nx) * (1 + ny) * (1 + nz)), (1 + ny, 1 + nz, 1 + nx), order='F')
+def element_stiffness(nx, ny, nz, nu, node_numbers):
     cVec = np.reshape(3 * node_numbers[0: -1, 0: -1, 0: -1] + 3, (nx * ny * nz, 1), order='F')
     additions = [np.array([0, 1, 2], dtype=np.int32),
                  np.array([3 * (ny + 1) * (nz + 1) + i for i in [0, 1, 2, -3, -2, -1]], dtype=np.int32),
@@ -166,21 +159,21 @@ def read_options(input_path):
     return nx, ny, nz, vol_f, penal, ft, max_it, r_min, eta, beta, move
 
 
-def read_bc(input_path, nx, ny, nDof):
+def read_bc(input_path, nx, ny, nz, node_numbers):
     bc = pd.read_excel(input_path, sheet_name='BC')
-    nodes = {}
+    fixed, dof = [], 3 * (1 + nx) * (1 + ny) * (1 + nz)
+    force_vector = matrix(0.0, (dof, 1))
     for _, row in bc.iterrows():
-        sx, sy, ex, ey = row['StartX'], row['StartY'], row['EndX'], row['EndY']
-        for x in np.linspace(sx, ex, int(max(1, (ex - sx) * (nx + 1)))):
-            for y in np.linspace(sy, ey, int(max(1, (ey - sy) * (ny + 1)))):
-                node_number = round((ny + 1) * x * nx + (1 - y) * ny)
-                node_x, node_y = node_number * 2, node_number * 2 + 1
-                nodes[node_x], nodes[node_y] = (row['DisX'], row['ForceX']), (row['DisY'], row['ForceY'])
-    fixed = [i for i, (d, _) in nodes.items() if d == 0]
-    free = np.setdiff1d(np.arange(0, nDof), fixed).tolist()
-    Fd = {i: f for i, (_, f) in nodes.items() if not np.isnan(f)}
-    F = csc_matrix((list(Fd.values()), (list(Fd.keys()), np.zeros(len(Fd)))), shape=(nDof, 1))
-    return free, matrix(F.toarray())
+        start, end = ([float(x) for x in row['StartPosition'].split(',')],
+                      [float(x) for x in row['EndPosition'].split(',')])
+        displacement, force = [row['DisX'], row['DisY'], row['DisZ']], [row['ForceX'], row['ForceY'], row['ForceZ']]
+        nr = [(int(np.floor(s * n)), int(np.floor(e * n)) + 1) for n, s, e in list(zip((nx, ny, nz), start, end))]
+        nodes = node_numbers[nr[1][0]:nr[1][1], nr[2][0]:nr[2][1], nr[0][0]:nr[0][1]].flatten()
+        for i, (d, f) in enumerate(zip(displacement, force)):
+            force_vector[(3 * nodes + i).tolist(), 0] = matrix(0 if np.isnan(f) else f, (nodes.size, 1))
+            fixed.extend([] if np.isnan(d) else (3 * nodes + i).tolist())
+    free = np.setdiff1d(np.arange(0, dof), fixed).tolist()
+    return free, force_vector
 
 
 def read_pres(input_path, nx, ny, nz):

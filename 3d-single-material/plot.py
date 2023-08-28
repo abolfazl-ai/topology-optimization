@@ -2,7 +2,7 @@ import numpy as np
 import pyvista as pv
 
 p = pv.Plotter(shape=(1, 2))
-threshold = 0.5
+threshold = 0.3
 
 
 def plot_3d(path, densities, names, colors):

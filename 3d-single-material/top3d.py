@@ -62,12 +62,11 @@ def top3d(input_path='input.xlsx'):
         penal, beta = cnt(penal, penalCnt, loop), cnt(beta, betaCnt, loop)
         #   ________________________________________________________________
         print(f"Iteration = {str(loop).rjust(3, '0')}, Change = {ch:0.6f}")
-        np.save('output/it' + str(loop).rjust(3, '0') + '.npy',
-                np.moveaxis(np.reshape(xPhys, (ny, nz, nx), 'F'), -1, 0))
+        np.save('x.npy', np.moveaxis(np.reshape(xPhys, (ny, nz, nx), 'F'), -1, 0))
 
     print(f'Model converged in {(time.time() - start):0.2f} seconds')
-    np.save('output/final.npy', np.moveaxis(np.reshape(xPhys, (ny, nz, nx), 'F'), -1, 0))
-    plot_3d('output/final.npy', [1, ], ['Solid', ], ['gray', ])
+    np.save('final.npy', np.moveaxis(np.reshape(xPhys, (ny, nz, nx), 'F'), -1, 0))
+    plot_3d('final.npy', [1, ], ['Solid', ], ['gray', ])
 
 
 def prj(v, eta, beta):
@@ -185,7 +184,7 @@ def read_bc(input_path, nx, ny, nDof):
 
 
 def read_pres(input_path, nx, ny, nz):
-    preserved = pd.read_excel(input_path, sheet_name='Preserved')
+    preserved = pd.read_excel(input_path, sheet_name='PreservedVolume')
     pasS, pasV = [], []
     for _, row in preserved.iterrows():
         left, right, top, bottom = row['Left'], row['Right'], row['Top'], row['Bottom']

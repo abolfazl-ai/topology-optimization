@@ -3,7 +3,6 @@ import pyvista as pv
 
 p = pv.Plotter(shape=(1, 2))
 threshold = 0.3
-init_volume = 0
 
 
 def plot_3d(path, densities, names, colors):
@@ -41,7 +40,4 @@ def plot_3d(path, densities, names, colors):
     p.show(full_screen=False, window_size=(1000, 500))
 
 
-plot_3d('output/it383.npy',
-        [0.5, 0.75, 1],
-        ['Material A', 'Material B', 'Material C'],
-        ['r', 'b', 'g'])
+plot_3d('x.npy', [0.5, 0.75, 1], ['Material A', 'Material B', 'Material C'], ['r', 'b', 'g'])

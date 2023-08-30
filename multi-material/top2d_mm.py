@@ -13,25 +13,27 @@ def top2d_mm(input_path='input.xlsx'):
     nx, ny, vol_f, penal, ft, max_it, r_min, eta, beta, move = read_options(input_path)
     penalCnt, betaCnt = [1, 1, 25, 0.25], [1, 1, 25, 2]
     #   ________________________________________________________________
+    node_numbers = np.reshape(range((1 + nx) * (1 + ny)), (1 + ny, 1 + nx), order='F')
     nEl, nDof = nx * ny, (1 + ny) * (1 + nx) * 2
     D, E, P, nu, M_name, M_color = read_materials(input_path)
-    free, F = read_bc(input_path, nx, ny, nDof)
-    pasS, pasV, act = read_pres(input_path, nx, ny)
-    Ke, Ke0, cMat, Iar = element_stiffness(nx, ny, 0.3)
+
+    pres, mask = read_pres(input_path, nx, ny)
+    free, F = read_bc(input_path, nx, ny, node_numbers)
+    Ke, Ke0, cMat, Iar = element_stiffness(nx, ny, 0.3, node_numbers)
+
     h, Hs, dHs = prepare_filter(ny, nx, r_min)
     #   ________________________________________________________________
-    x, dE_, dV = np.zeros(nEl), np.zeros(nEl), np.zeros(nEl)
-    dV[act] = 1 / (nEl * vol_f)
-    x[act] = (vol_f * (nEl - len(pasV)) - len(pasS)) / len(act)
-    x[pasS] = 1
+    x, dE_, dV = pres.copy(), np.zeros((ny, nx)), np.zeros((ny, nx))
+    dV[mask] = 1 / (nEl * vol_f)
+    x[mask] = (vol_f * (nEl - pres[~mask].size)) / pres[mask].size
     xPhys, xOld, ch, loop, U = x.copy(), 1, 1, 0, np.zeros((nDof, 1))
     #   ________________________________________________________________
     fig, ax, im, bg = init_fig(np.reshape(xPhys, (ny, nx), 'F'), D, M_color, M_name)
     start = time.time()
-    while ch > 1e-4 and loop < max_it:
+    while ch > 1e-3 and loop < max_it:
         loop += 1
-        xTilde = correlate(np.reshape(x, (ny, nx), 'F'), h, mode='reflect') / Hs
-        xPhys[act] = xTilde.flatten(order='F')[act]
+        xTilde = correlate(x, h, mode='reflect') / Hs
+        xPhys[mask] = xTilde[mask]
         if ft > 1:
             f = (np.mean(prj(xPhys, eta, beta)) - vol_f) * (ft == 3)
             while abs(f) > 1e-6:
@@ -46,22 +48,22 @@ def top2d_mm(input_path='input.xlsx'):
         P_, dP_ = ordered_simp_interpolation(xPhys, penal, D, P)
         sK = ((Ke[np.newaxis]).T * E_).flatten(order='F')
         K = csc_matrix((sK, (Iar[:, 0], Iar[:, 1])), shape=(nDof, nDof))[free, :][:, free].tocoo()
-        U, B = np.zeros(nDof), F[free, 0]
+        U, B = np.zeros(nDof), F[free]
         K = spmatrix(K.data, K.row.astype(np.int32), K.col.astype(np.int32))
         cholmod.linsolve(K, B)
         U[free] = np.array(B)[:, 0]
         #   ________________________________________________________________
         dc = -dE_ * np.sum((U[cMat] @ Ke0) * U[cMat], axis=1)
-        dc = correlate(np.reshape(dc, (ny, nx), order='F') / dHs, h, mode='reflect').flatten(order='F')
-        dV0 = correlate(np.reshape(dV, (ny, nx), 'F') / dHs, h, mode='reflect').flatten(order='F')
+        dc = correlate(np.reshape(dc, (ny, nx), order='F') / dHs, h, mode='reflect')
+        dV0 = correlate(np.reshape(dV, (ny, nx), 'F') / dHs, h, mode='reflect')
         #   ________________________________________________________________
-        x = optimality_criterion(x, vol_f, act, move, dc, dV0)
         # x = oc(nx, ny, x, vol_f, 0.3, dc, P_, dP_, move)
         # x = optimality_criterion2(nx, ny, x, act, vol_f, 0.3, dc, dV0, P_, dP_, move)
+        x[mask] = optimality_criterion(x[mask], vol_f, move, dc[mask], dV0[mask])
         penal, beta = cnt(penal, penalCnt, loop), cnt(beta, betaCnt, loop)
         #   ________________________________________________________________
         print(f'Iteration = {loop}, Change = {ch:0.5f}')
-        plot(np.reshape(xPhys, (ny, nx), 'F'), loop, ch, fig, ax, im, bg)
+        plot(xPhys, loop, ch, fig, ax, im, bg)
 
     print(f'Model converged in {(time.time() - start):0.2f} seconds')
     ax.set_title(F'Iteration: {loop} | Model converged in {(time.time() - start):0.1f} seconds')
@@ -71,7 +73,7 @@ def top2d_mm(input_path='input.xlsx'):
 def simp_interpolation(x, penal, Y_min, Y_max):
     y = Y_min + x ** penal * (Y_max - Y_min)
     dy = penal * (Y_max - Y_min) * x ** (penal - 1)
-    return y, dy
+    return y.flatten(order='F'), dy.flatten(order='F')
 
 
 def ordered_simp_interpolation(x, penal, X, Y):
@@ -82,17 +84,17 @@ def ordered_simp_interpolation(x, penal, X, Y):
         B = Y[i] - A * (X[i] ** penal)
         y[mask] = A * (x[mask] ** penal) + B
         dy[mask] = A * penal * (x[mask] ** (penal - 1))
-    return y, dy
+    return y.flatten(order='F'), dy.flatten(order='F')
 
 
-def optimality_criterion(x, vol_f, act, move, dc, dV0):
-    x_new, xT = x.copy(), x[act]
+def optimality_criterion(x, vol_f, move, dc, dV0):
+    x_new, xT = x.copy(), x.copy()
     xU, xL = xT + move, xT - move
-    ocP = xT * np.real(np.sqrt(-dc[act] / dV0[act]))
+    ocP = xT * np.real(np.sqrt(-dc / dV0))
     LM = [0, np.mean(ocP) / vol_f]
     while abs((LM[1] - LM[0]) / (LM[1] + LM[0])) > 1e-4:
         l_mid = 0.5 * (LM[0] + LM[1])
-        x_new[act] = np.maximum(np.minimum(np.minimum(ocP / l_mid, xU), 1), xL)
+        x_new = np.maximum(np.minimum(np.minimum(ocP / l_mid, xU), 1), xL)
         LM[0], LM[1] = (l_mid, LM[1]) if np.mean(x_new) > vol_f else (LM[0], l_mid)
     return x_new
 
@@ -170,8 +172,7 @@ def prepare_filter(ny, nx, r_min):
     return h, Hs, Hs.copy()
 
 
-def element_stiffness(nx, ny, nu):
-    node_numbers = np.reshape(range((1 + nx) * (1 + ny)), (1 + ny, 1 + nx), order='F')
+def element_stiffness(nx, ny, nu, node_numbers):
     cVec = np.reshape(2 * node_numbers[0: -1, 0: -1] + 2, (nx * ny, 1), order='F')
     cMat = cVec + np.array([0, 1, 2 * ny + 2, 2 * ny + 3, 2 * ny + 0, 2 * ny + 1, -2, -1])
     sI, sII = np.hstack([np.arange(j, 8) for j in range(8)]), np.hstack([np.tile(j, 7 - j + 1) for j in range(8)])
@@ -194,7 +195,7 @@ def init_fig(x, D, colors, names):
     cmap = mc.LinearSegmentedColormap.from_list('mesh', list(zip(D, colors)))
     custom_lines = [Line2D([0], [0], marker='o', label='Scatter',
                            lw=0, markerfacecolor=c, markersize=10) for c in colors]
-    im = ax.imshow(x, cmap=cmap, vmin=0, vmax=1)
+    im = ax.imshow(x, origin='lower', cmap=cmap, vmin=0, vmax=1)
     ax.set_title(F'Iteration: {0}, Change: {1:0.4f}')
     ax.legend(custom_lines, names, ncol=len(colors))  # , bbox_to_anchor=(0.8, -0.15)
     plt.get_current_fig_manager().window.showMaximized()
@@ -232,33 +233,34 @@ def read_options(input_path):
     return nx, ny, vol_f, penal, ft, max_it, r_min, eta, beta, move
 
 
-def read_bc(input_path, nx, ny, nDof):
+def read_bc(input_path, nx, ny, node_numbers):
     bc = pd.read_excel(input_path, sheet_name='BC')
-    nodes = {}
+    fixed, dof = [], 2 * (1 + nx) * (1 + ny)
+    force_vector = matrix(0.0, (dof, 1))
     for _, row in bc.iterrows():
-        sx, sy, ex, ey = row['StartX'], row['StartY'], row['EndX'], row['EndY']
-        for x in np.linspace(sx, ex, int(max(1, (ex - sx) * (nx + 1)))):
-            for y in np.linspace(sy, ey, int(max(1, (ey - sy) * (ny + 1)))):
-                node_number = round((ny + 1) * x * nx + (1 - y) * ny)
-                node_x, node_y = node_number * 2, node_number * 2 + 1
-                nodes[node_x], nodes[node_y] = (row['DisX'], row['ForceX']), (row['DisY'], row['ForceY'])
-    fixed = [i for i, (d, _) in nodes.items() if d == 0]
-    free = np.setdiff1d(np.arange(0, nDof), fixed).tolist()
-    Fd = {i: f for i, (_, f) in nodes.items() if not np.isnan(f)}
-    F = csc_matrix((list(Fd.values()), (list(Fd.keys()), np.zeros(len(Fd)))), shape=(nDof, 1))
-    return free, matrix(F.toarray())
+        start, end = ([float(x) for x in row['StartPosition'].split(',')],
+                      [float(x) for x in row['EndPosition'].split(',')])
+        displacement, force = [row['DisX'], row['DisY']], [row['ForceX'], row['ForceY']]
+        nr = [(int(np.floor(s * n)), int(np.floor(e * n)) + 1) for n, s, e in list(zip((nx, ny), start, end))]
+        nodes = node_numbers[nr[1][0]:nr[1][1], nr[0][0]:nr[0][1]].flatten()
+        for i, (d, f) in enumerate(zip(displacement, force)):
+            force_vector[(2 * nodes + i).tolist(), 0] = matrix(0 if np.isnan(f) else f, (nodes.size, 1))
+            fixed.extend([] if np.isnan(d) else (2 * nodes + i).tolist())
+    free = np.setdiff1d(np.arange(0, dof), fixed).tolist()
+    return free, force_vector
 
 
 def read_pres(input_path, nx, ny):
     preserved = pd.read_excel(input_path, sheet_name='Preserved')
-    pasS, pasV = [], []
+    pres, mask = np.zeros((ny, nx)), np.ones((ny, nx), dtype=bool)
     for _, row in preserved.iterrows():
-        left, right, top, bottom = row['Left'], row['Right'], row['Top'], row['Bottom']
-        elements = [range(int(x * nx * ny + (1 - top) * ny), int(x * nx * ny + (1 - bottom) * ny))
-                    for x in np.arange(left, right, step=1 / nx)]
-        pasS.extend(elements) if row['Density'] == 1 else pasV.extend(elements)
-    act = np.setdiff1d(np.arange(0, nx * ny), np.union1d(np.array(pasS), np.array(pasV))).tolist()
-    return pasS, pasV, act
+        start, end = ([float(x) for x in row['StartPosition'].split(',')],
+                      [float(x) for x in row['EndPosition'].split(',')])
+        nr = [(int(max(min(np.floor(s * n), np.floor(e * n) - 1), 0)), int(np.floor(e * n)) + 1)
+              for n, s, e in list(zip((nx, ny), start, end))]
+        mask[nr[1][0]:nr[1][1], nr[0][0]:nr[0][1]] = False
+        pres[nr[1][0]:nr[1][1], nr[0][0]:nr[0][1]] = row['Density']
+    return pres, mask
 
 
 top2d_mm()

@@ -24,7 +24,7 @@ class Plot3D:
             self.x = np.load(path)
         self.interactive = interactive
         self._show_data()
-        self.p.show(full_screen=False, window_size=(1000, 500), interactive_update=interactive)
+        self.p.show(full_screen=False, window_size=(1100, 550), interactive_update=interactive)
 
     def _th(self, value):
         if self.init:
@@ -37,7 +37,7 @@ class Plot3D:
                     self.p.add_mesh(self.roi, scalars='Color', cmap=self.colors,
                                     show_scalar_bar=False, name='isosurface')
                 else:
-                    self.p.add_volume(self.x, opacity=[0, 0.5], clim=[0, 1], cmap=self.colors,
+                    self.p.add_volume(self.x, opacity=[0, 0.6], clim=[0.01, 1], cmap=self.colors,
                                       show_scalar_bar=False, name='isosurface')
 
     def _show_data(self):

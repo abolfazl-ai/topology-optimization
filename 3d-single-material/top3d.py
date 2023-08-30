@@ -21,7 +21,9 @@ def top3d(input_path='input.xlsx', plot=False):
     #   ________________________________________________________________
     x, dE_, dV = pres.copy(), np.zeros((ny, nz, nx)), np.zeros((ny, nz, nx))
     np.save('x.npy', np.moveaxis(x, -1, 0))
-    p = Plot3D('x.npy', [1, ], ['Material A', ], ['b', ])
+    p = Plot3D('x.npy', [0.5, 0.75, 1],
+           ['Material A', 'Material B', 'Material C'],
+           ['r', 'b', 'g'])
     dV[mask] = 1 / (nEl * vol_f)
     x[mask] = (vol_f * (nEl - pres[~mask].size)) / pres[mask].size
     xPhys, xOld, ch, loop, U = x.copy(), 1, 1, 0, np.zeros((nDof, 1))
@@ -192,4 +194,4 @@ def read_pres(input_path, nx, ny, nz):
     return pres, mask
 
 
-top3d(input_path='bike.xlsx', plot=True)
+top3d(plot=True)

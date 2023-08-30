@@ -39,14 +39,10 @@ while change >1.01*MinMove
 % RENDER MULTI-MATERIAL TOPOLOGY  
   Render(nelx,nely,x,D,MColor,MName)
   axis equal; axis tight; axis off;pause(1e-6);
-  saveas(gcf,sprintf('%i',loop),'tif');
   Objective(loop)=c;
   MassFraction(loop)=sum(sum(x))/(nelx*nely);
   CostFraction(loop)=sum(sum(x.*P_))/(nelx*nely);
 end 
-  save Objective.txt Objective -ascii
-  save MassFraction.txt MassFraction -ascii
-  save CostFraction.txt CostFraction -ascii
 end
 %%%%%%%% OPTIMALITY CRITERIA UPDATE %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 function [xnew]=OC(nelx,nely,x,volfrac,costfrac,dc,E_,dE_,P_,dP_,loop,MinMove)

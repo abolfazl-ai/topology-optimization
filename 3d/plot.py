@@ -4,9 +4,8 @@ import pyvista as pv
 
 class Plot3D:
     def __init__(self, path, density, name, colors, thresh=0.3):
-        self.interactive = False
-        self.init = False
-        self.path, self.threshold, self.densities, self.names, self.colors = path, thresh, density, name, colors
+        self.path, self.interactive, self.init = path, False, False
+        self.threshold, self.densities, self.names, self.colors = thresh, density[1:], name[1:], colors[1:]
         self.x = np.load(path)
         self.grid = pv.ImageData(dimensions=self.x.shape, spacing=(1, 1, 1), origin=(0, 0, 0))
         self.volume = self.grid.volume
@@ -31,9 +30,9 @@ class Plot3D:
             self.roi = self.grid.clip_scalar(value=value, scalars='Density', invert=False)
             if self.roi.points.size > 0:
                 self.p.subplot(0, 1)
+                self.p.add_text(f'Volume = {100 * self.roi.volume / self.volume:0.1f}%',
+                                position=(30, 40), font_size=10, name='volume')
                 if not self.interactive:
-                    self.p.add_text(f'Volume = {100 * self.roi.volume / self.volume:0.1f}%',
-                                    position=(30, 40), font_size=10, name='volume')
                     self.p.add_mesh(self.roi, scalars='Color', cmap=self.colors,
                                     show_scalar_bar=False, name='isosurface')
                 else:

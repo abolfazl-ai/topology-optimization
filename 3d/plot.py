@@ -60,3 +60,11 @@ class Plot3D:
                 self.p.add_mesh(self.roi, scalars='Color', cmap=self.colors, show_scalar_bar=False, name='wireframe')
             self.p.add_axes()
             self._th(self.threshold)
+
+
+def view(path):
+    p = Plot3D(path, [0, 1], ['V', 'A'], ['w', 'b'])
+    p.update(path, interactive=False)
+
+
+view('runs/45D2.00.npy')

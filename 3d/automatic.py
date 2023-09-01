@@ -1,8 +1,8 @@
 import time
+
 import numpy as np
 import pandas as pd
 from cvxopt import cholmod, matrix, spmatrix
-from openpyxl.reader.excel import load_workbook
 from scipy.ndimage import correlate
 from scipy.sparse import csc_matrix
 
@@ -21,10 +21,10 @@ def automatic_run(ft, filter_bc, r_min, f_name, input_path='input.xlsx'):
     #   ________________________________________________________________
     x, dE, compliance, volume, cost = pres.copy(), np.zeros((ny, nz, nx)), [], [], []
     x[mask] = (vf * (elem_num - pres[~mask].size)) / pres[mask].size
-    x_phys, x_old, change, loop = x.copy(), 1, 1, 0
+    x_phys, change, loop = x.copy(), 1, 0
     #   ________________________________________________________________
     start = time.time()
-    while change > 1e-3 and loop < max_it:
+    while change > 0.0001 and loop < max_it:
         loop += 1
         x_tilde = correlate(x, h, mode=filter_bc) / Hs
         x_phys[mask] = x_tilde[mask]
@@ -35,8 +35,6 @@ def automatic_run(ft, filter_bc, r_min, f_name, input_path='input.xlsx'):
                 f = np.mean(prj(x_phys, eta, beta)) - vf
             dHs = Hs / np.reshape(dprj(x_tilde, eta, beta), (ny, nz, nx))
             x_phys = prj(x_phys, eta, beta)
-        change = np.linalg.norm(x_phys - x_old) / np.sqrt(elem_num)
-        x_old = x_phys.copy()
         #   ________________________________________________________________
         P, dP = ordered_simp_interpolation(x_phys, 1 / penalty, densities, costs)
         E, dE = ordered_simp_interpolation(x_phys, penalty, densities, elasticities, True)
@@ -55,9 +53,11 @@ def automatic_run(ft, filter_bc, r_min, f_name, input_path='input.xlsx'):
         x[mask], vo, co = optimality_criterion(x[mask], dC, P[mask], dP, vf, cf, max(0.15 * 0.96 ** loop, move))
         volume.append(vo)
         cost.append(co)
+        change = 1 if loop < 2 else abs((compliance[-2] - compliance[-1]) / compliance[0])
         penalty, beta = cnt(penalty, penalCnt, loop), cnt(beta, betaCnt, loop)
         #   ________________________________________________________________
-        print(f"It = {str(loop).rjust(3, '0')}, Change = {change:0.6f}, Compliance = {compliance[-1]}")
+        print(f"Design cycle {str(loop).rjust(3, '0')}: Change = {change:0.6f}, "
+              f"Compliance = {compliance[-1]:0.4e}, Volume = {volume[-1]:0.3f}, Cost = {cost[-1]:0.3f}")
         np.save(f_name, np.moveaxis(x_phys, -1, 0))
 
     print(f'Model converged in {(time.time() - start):0.2f} seconds. Final compliance = {compliance[-1]}')
@@ -227,14 +227,13 @@ arguments = [(3, 'constant', 1.50),
 
 for fil, fil_bc, r in arguments:
     name_format = f"45{'D' if fil_bc == 'constant' else 'N'}{r:0.2f}"
-    ro, c, v, p = automatic_run(fil, fil_bc, r, 'runs/' + name_format)
-    np.save(name_format, ro)
-    df_c = pd.read_excel('runs/compliance.xlsx')
-    df_v = pd.read_excel('runs/volume.xlsx')
-    df_p = pd.read_excel('runs/cost.xlsx')
-    df_c[name_format] = c
-    df_v[name_format] = v
-    df_p[name_format] = p
-    df_c.to_excel('runs/compliance.xlsx', index=False)
-    df_v.to_excel('runs/volume.xlsx', index=False)
-    df_p.to_excel('runs/cost.xlsx', index=False)
+    _, comp, vol_f, pri_f = automatic_run(fil, fil_bc, r, 'runs/' + name_format)
+
+    empty = np.zeros(shape=(500,)) * np.nan
+    sheets = ['Compliance', 'Volume', 'Cost']
+    dfs = [pd.read_excel('runs/data.xlsx', sheet_name=s) for s in sheets]
+    for df, sheet_name in zip(dfs, sheets):
+        empty[0:len(comp)] = [comp, vol_f, pri_f][sheets.index(sheet_name)]
+        df[name_format] = empty
+    with pd.ExcelWriter('runs/data.xlsx', engine='openpyxl') as writer:
+        [df.to_excel(writer, sheet_name=s, index=False) for df, s in zip(dfs, sheets)]

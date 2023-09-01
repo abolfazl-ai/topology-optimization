@@ -209,24 +209,29 @@ def read_pres(input_path, nx, ny, nz):
     return pres, mask
 
 
-arguments = [(3, 'constant', 1.50),
-             (3, 'constant', 1.73),
-             (3, 'constant', 2.00),
-             (3, 'constant', 2.50),
-             (3, 'constant', 3.00),
-             (3, 'constant', 4.00),
-             (3, 'constant', 5.00),
-             (3, 'constant', 8.00),
-             (2, 'constant', 1.75),
-             (2, 'constant', 2.00),
-             (1, 'constant', 1.75),
-             (1, 'constant', 2.00),
-             (3, 'reflect', 1.73),
-             (3, 'reflect', 2.00),
-             (3, 'reflect', 3.00)]
+arguments = [
+    # (3, 'constant', 1.50),
+    #          (3, 'constant', 1.73),
+    #          (3, 'constant', 2.00),
+    #          (3, 'constant', 2.50),
+    #          (3, 'constant', 3.00),
+    #          (3, 'constant', 4.00),
+    #          (3, 'constant', 5.00),
+    #          (3, 'constant', 8.00),
+    (3, 'constant', 1.85),
+    (3, 'constant', 1.65),
+    (2, 'constant', 1.73),
+    (2, 'constant', 2.00),
+    (1, 'constant', 1.73),
+    (1, 'constant', 2.00),
+    (3, 'reflect', 1.73),
+    (3, 'nearest', 1.73),
+    (3, 'mirror', 1.73),
+    (3, 'wrap', 1.73),
+]
 
 for fil, fil_bc, r in arguments:
-    name_format = f"45{'D' if fil_bc == 'constant' else 'N'}{r:0.2f}"
+    name_format = f"45{fil_bc.upper()[0]}{r:0.2f}"
     _, comp, vol_f, pri_f = automatic_run(fil, fil_bc, r, 'runs/' + name_format)
 
     empty = np.zeros(shape=(500,)) * np.nan

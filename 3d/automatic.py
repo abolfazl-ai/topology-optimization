@@ -24,6 +24,7 @@ def automatic_run(ft, filter_bc, r_min, f_name, input_path='input.xlsx'):
     x_phys, change, loop = x.copy(), 1, 0
     #   ________________________________________________________________
     start = time.time()
+    print(f'Starting loop. N={nx}, Filter={ft}, FilterBC={filter_bc.upper()}, Rmin={r_min}')
     while change > 0.0001 and loop < max_it:
         loop += 1
         x_tilde = correlate(x, h, mode=filter_bc) / Hs
@@ -56,8 +57,8 @@ def automatic_run(ft, filter_bc, r_min, f_name, input_path='input.xlsx'):
         change = 1 if loop < 2 else abs((compliance[-2] - compliance[-1]) / compliance[0])
         penalty, beta = cnt(penalty, penalCnt, loop), cnt(beta, betaCnt, loop)
         #   ________________________________________________________________
-        print(f"Design cycle {str(loop).rjust(3, '0')}: Change = {change:0.6f}, "
-              f"Compliance = {compliance[-1]:0.4e}, Volume = {volume[-1]:0.3f}, Cost = {cost[-1]:0.3f}")
+        print(f"Design cycle {str(loop).rjust(3, '0')}: Change={change:0.6f}, "
+              f"Compliance={compliance[-1]:0.4e}, Volume={volume[-1]:0.3f}, Cost={cost[-1]:0.3f}")
         np.save(f_name, np.moveaxis(x_phys, -1, 0))
 
     print(f'Model converged in {(time.time() - start):0.2f} seconds. Final compliance = {compliance[-1]}')
@@ -163,7 +164,7 @@ def element_stiffness(nx, ny, nz, nu, node_numbers):
 
 def read_options(input_path):
     options = pd.read_excel(input_path, sheet_name='Options')
-    nx, ny, nz, vf, cf, penalty, ft, filter_bc, max_it, r_min, eta, beta, move = options['Value']
+    nx, ny, nz, vf, cf, penalty, max_it, move, ft, filter_bc, r_min, eta, beta = options['Value']
     nx, ny, nz, penalty, ft, filter_bc = np.array((nx, ny, nz, penalty, ft, filter_bc), dtype=np.int32)
     filter_bc = 'reflect' if filter_bc == 1 else 'constant'
     return nx, ny, nz, vf, cf, penalty, ft, filter_bc, max_it, r_min, eta, beta, move
@@ -210,28 +211,12 @@ def read_pres(input_path, nx, ny, nz):
 
 
 arguments = [
-    # (3, 'constant', 1.50),
-    #          (3, 'constant', 1.73),
-    #          (3, 'constant', 2.00),
-    #          (3, 'constant', 2.50),
-    #          (3, 'constant', 3.00),
-    #          (3, 'constant', 4.00),
-    #          (3, 'constant', 5.00),
-    #          (3, 'constant', 8.00),
-    (3, 'constant', 1.85),
-    (3, 'constant', 1.65),
-    (2, 'constant', 1.73),
-    (2, 'constant', 2.00),
-    (1, 'constant', 1.73),
-    (1, 'constant', 2.00),
-    (3, 'reflect', 1.73),
-    (3, 'nearest', 1.73),
-    (3, 'mirror', 1.73),
-    (3, 'wrap', 1.73),
+    (2, 'mirror', 1.80),
+    (1, 'mirror', 1.80),
 ]
 
 for fil, fil_bc, r in arguments:
-    name_format = f"45{fil_bc.upper()[0]}{r:0.2f}"
+    name_format = f"45-{fil_bc.upper()[0]}-{r:0.2f}-{fil}"
     _, comp, vol_f, pri_f = automatic_run(fil, fil_bc, r, 'runs/' + name_format)
 
     empty = np.zeros(shape=(500,)) * np.nan

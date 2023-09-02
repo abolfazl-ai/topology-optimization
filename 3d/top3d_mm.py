@@ -162,7 +162,7 @@ def element_stiffness(nx, ny, nz, nu, node_numbers):
 
 def read_options(input_path):
     options = pd.read_excel(input_path, sheet_name='Options')
-    nx, ny, nz, vf, cf, penalty, ft, filter_bc, max_it, r_min, eta, beta, move = options['Value']
+    nx, ny, nz, vf, cf, penalty, max_it, move, ft, filter_bc, r_min, eta, beta = options['Value']
     nx, ny, nz, penalty, ft, filter_bc = np.array((nx, ny, nz, penalty, ft, filter_bc), dtype=np.int32)
     filter_bc = 'reflect' if filter_bc == 1 else 'constant'
     return nx, ny, nz, vf, cf, penalty, ft, filter_bc, max_it, r_min, eta, beta, move

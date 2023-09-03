@@ -7,8 +7,9 @@ from scipy.ndimage import correlate
 from scipy.sparse import csc_matrix
 
 
-def automatic_run(ft, filter_bc, r_min, f_name, input_path='input.xlsx'):
-    nx, ny, nz, vf, cf, penalty, _, _, max_it, _, eta, beta, move = read_options(input_path)
+def automatic_run(n, ft, filter_bc, r_min, f_name, input_path='input.xlsx'):
+    nx, ny, nz = n, n, n
+    _, _, _, vf, cf, penalty, _, _, max_it, _, eta, beta, move = read_options(input_path)
     penalCnt, betaCnt = [50, 3, 25, 0.25], [250, 16, 25, 2]
     #   ________________________________________________________________
     node_numbers = np.reshape(range((1 + nx) * (1 + ny) * (1 + nz)), (1 + ny, 1 + nz, 1 + nx), order='F')
@@ -211,13 +212,12 @@ def read_pres(input_path, nx, ny, nz):
 
 
 arguments = [
-    (2, 'mirror', 1.80),
-    (1, 'mirror', 1.80),
+    (40, 3, 'mirror', 1.80),
 ]
 
-for fil, fil_bc, r in arguments:
-    name_format = f"45-{fil_bc.upper()[0]}-{r:0.2f}-{fil}"
-    _, comp, vol_f, pri_f = automatic_run(fil, fil_bc, r, 'runs/' + name_format)
+for nn, fil, fil_bc, r in arguments:
+    name_format = f"{nn}-{fil_bc.upper()[0]}-{r:0.2f}-{fil}"
+    _, comp, vol_f, pri_f = automatic_run(nn, fil, fil_bc, r, 'runs/' + name_format)
 
     empty = np.zeros(shape=(500,)) * np.nan
     sheets = ['Compliance', 'Volume', 'Cost']

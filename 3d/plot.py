@@ -1,3 +1,5 @@
+import time
+
 import numpy as np
 import pyvista as pv
 
@@ -11,7 +13,7 @@ class Plot3D:
         self.volume = self.grid.volume
         self.p = pv.Plotter(shape=(1, 2))
         self.p.add_mesh(self.grid, color='gray', opacity=0, name='blank')
-        self.p.camera.zoom(0.9)
+        # self.p.camera.zoom(0.9)
         self.p.subplot(0, 1)
         self.p.add_slider_widget(self._th, [0, 1], thresh, 'Threshold', (0.1, 0.9), style='modern', fmt='%0.2f')
         self.p.add_bounding_box()
@@ -67,4 +69,4 @@ def view(path):
     p.update(path, interactive=False)
 
 
-view('runs/45-M-1.80-3.npy')
+# view('runs/45-M-5.00-3.npy')

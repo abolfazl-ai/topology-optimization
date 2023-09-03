@@ -59,7 +59,7 @@ def top2d_mm(input_path='input.xlsx'):
         penalty, beta = cnt(penalty, penalCnt, loop), cnt(beta, betaCnt, loop)
         #   ________________________________________________________________
         print(f'Iteration = {loop}, Change = {change:0.5f}')
-        plot(x_phys, loop, change, fig, ax, im, bg)
+        plot(x_phys, loop, change, fig, ax, im, bg, densities)
 
     print(f'Model converged in {(time.time() - start):0.2f} seconds')
     ax.set_title(F'Iteration: {loop} | Model converged in {(time.time() - start):0.1f} seconds')
@@ -156,9 +156,12 @@ def init_fig(x, D, colors, names):
     return fig, ax, im, bg
 
 
-def plot(x, loop, ch, fig, ax, im, bg):
+def plot(x, loop, ch, fig, ax, im, bg, densities):
+    array = x.copy()
+    for i, d in enumerate(densities):
+        array[(x > ((densities[i - 1] + d) / 2 if i > 0 else d))] = d
     fig.canvas.restore_region(bg)
-    im.set_array(x)
+    im.set_array(array)
     ax.set_title(F'Iteration: {loop}, Change: {ch:0.5f}')
     ax.draw_artist(im)
     fig.canvas.blit(fig.bbox)

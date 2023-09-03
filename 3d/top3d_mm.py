@@ -2,12 +2,12 @@ import time
 import numpy as np
 import pandas as pd
 from cvxopt import cholmod, matrix, spmatrix
-from scipy.ndimage import correlate
+from scipy.ndimage import correlate, convolve
 from scipy.sparse import csc_matrix
 from plot import Plot3D
 
 
-def top3d_mm(input_path='input.xlsx', plot=False):
+def top3d_mm(input_path='amir.xlsx', plot=False):
     nx, ny, nz, vf, cf, penalty, ft, filter_bc, max_it, r_min, eta, beta, move = read_options(input_path)
     penalCnt, betaCnt = [50, 3, 25, 0.25], [250, 16, 25, 2]
     #   ________________________________________________________________
@@ -17,8 +17,11 @@ def top3d_mm(input_path='input.xlsx', plot=False):
     free, force = read_bc(input_path, nx, ny, nz, node_numbers)
     densities, elasticities, costs, names, colors = read_materials(input_path)
     Ke, Ke0, c_mat, indexes = element_stiffness(nx, ny, nz, 0.3, node_numbers)
-    h, Hs, dHs = prepare_filter(ny, nx, nz, r_min,filter_bc)
+    h, Hs, dHs = prepare_filter(ny, nx, nz, r_min, filter_bc)
     #   ________________________________________________________________
+    dsK, dV = np.zeros((ny, nz, nx)), np.zeros((ny, nz, nx))
+    dV[mask] = 1 / (elem_num * vf)
+
     x, dE = pres.copy(), np.zeros((ny, nz, nx))
     np.save('x.npy', np.moveaxis(x, -1, 0))
     p = Plot3D('x.npy', densities, names, colors)
@@ -26,7 +29,7 @@ def top3d_mm(input_path='input.xlsx', plot=False):
     x_phys, x_old, change, loop = x.copy(), 1, 1, 0
     #   ________________________________________________________________
     start = time.time()
-    while change > 1e-3 and loop < max_it:
+    while change > 5e-3 and loop < max_it:
         loop += 1
         x_tilde = correlate(x, h, mode=filter_bc) / Hs
         x_phys[mask] = x_tilde[mask]
@@ -41,19 +44,24 @@ def top3d_mm(input_path='input.xlsx', plot=False):
         x_old = x_phys.copy()
         #   ________________________________________________________________
         E, dE = ordered_simp_interpolation(x_phys, penalty, densities, elasticities, True)
-        Ks = ((Ke[np.newaxis]).T * E).flatten(order='F')
-        K = csc_matrix((Ks, (indexes[:, 0], indexes[:, 1])), shape=(dof, dof))[free, :][:, free].tocoo()
+        Ks = ((Ke[np.newaxis]).T @ np.reshape(E, newshape=(1, E.size))).flatten(order='F')
+
+        dsK[mask] = -penalty * (1 - 0.0001) * x_phys[mask] ** (penalty - 1)
+        sK = ((Ke[np.newaxis]).T * (0.0001 + x_phys.flatten(order='F') ** penalty * (1 - 0.0001))).flatten(order='F')
+
+        K = csc_matrix((sK, (indexes[:, 0], indexes[:, 1])), shape=(dof, dof))[free, :][:, free].tocoo()
         u, b = np.zeros(dof), force[free]
         K = spmatrix(K.data, K.row.astype(np.int32), K.col.astype(np.int32))
         cholmod.linsolve(K, b)
         u[free] = np.array(b)[:, 0]
         #   ________________________________________________________________
-        dC = np.reshape(-dE * np.sum((u[c_mat] @ Ke0) * u[c_mat], axis=1), (ny, nz, nx), order='F')
-        dC = correlate(dC / dHs, h, mode=filter_bc)[mask]
+        dC = np.reshape(dsK.flatten(order='F') * np.sum((u[c_mat] @ Ke0) * u[c_mat], axis=1),
+                        (ny, nz, nx), order='F')
+        dC = correlate(dC / dHs, h, mode=filter_bc)
         P, dP = ordered_simp_interpolation(x_phys, 1 / penalty, densities, costs)
-        dP = correlate(dP / dHs, h, mode='reflect')[mask]
+        dP = correlate(dP / dHs, h, mode=filter_bc)
         #   ________________________________________________________________
-        x[mask] = optimality_criterion(x[mask], dC, P[mask], dP, vf, cf, max(0.15 * 0.96 ** loop, move))
+        x[mask] = optimality_criterion(x, dC, P, dP, vf, cf, max(0.15 * 0.96 ** loop, move))[mask]
         penalty, beta = cnt(penalty, penalCnt, loop), cnt(beta, betaCnt, loop)
         #   ________________________________________________________________
         print(f"Iteration = {str(loop).rjust(3, '0')}, Change = {change:0.6f}")
@@ -107,7 +115,7 @@ def optimality_criterion(x, dC, P, dP, vf, cf, move):
     return x_new
 
 
-def prepare_filter(ny, nx, nz, r_min,filter_bc):
+def prepare_filter(ny, nx, nz, r_min, filter_bc):
     dy, dz, dx = np.meshgrid(np.arange(-np.ceil(r_min) + 1, np.ceil(r_min)),
                              np.arange(-np.ceil(r_min) + 1, np.ceil(r_min)),
                              np.arange(-np.ceil(r_min) + 1, np.ceil(r_min)))
@@ -164,7 +172,7 @@ def read_options(input_path):
     options = pd.read_excel(input_path, sheet_name='Options')
     nx, ny, nz, vf, cf, penalty, max_it, move, ft, filter_bc, r_min, eta, beta = options['Value']
     nx, ny, nz, penalty, ft, filter_bc = np.array((nx, ny, nz, penalty, ft, filter_bc), dtype=np.int32)
-    filter_bc = 'reflect' if filter_bc == 1 else 'constant'
+    filter_bc = ['constant', 'reflect', 'nearest', 'mirror', 'wrap'][filter_bc]
     return nx, ny, nz, vf, cf, penalty, ft, filter_bc, max_it, r_min, eta, beta, move
 
 
@@ -189,7 +197,8 @@ def read_bc(input_path, nx, ny, nz, node_numbers):
         nr = [(int(np.floor(s * n)), int(np.floor(e * n)) + 1) for n, s, e in list(zip((nx, ny, nz), start, end))]
         nodes = node_numbers[nr[1][0]:nr[1][1], nr[2][0]:nr[2][1], nr[0][0]:nr[0][1]].flatten()
         for i, (d, f) in enumerate(zip(displacement, force)):
-            force_vector[(3 * nodes + i).tolist(), 0] = matrix(0 if np.isnan(f) else f, (nodes.size, 1))
+            s = np.sin((np.arange(0, ny + 1) / ny) * np.pi)
+            force_vector[(3 * nodes + i).tolist(), 0] = matrix(0 if np.isnan(f) else f * s, (nodes.size, 1))
             fixed.extend([] if np.isnan(d) else (3 * nodes + i).tolist())
     free = np.setdiff1d(np.arange(0, dof), fixed).tolist()
     return free, force_vector

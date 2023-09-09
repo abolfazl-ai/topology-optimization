@@ -47,19 +47,19 @@ def automatic_run(n, ft, filter_bc, r_min, f_name, input_path='input.xlsx'):
         cholmod.linsolve(K, b)
         u[free] = np.array(b)[:, 0]
         #   ________________________________________________________________
-        compliance.append(np.sum(E * np.sum((u[c_mat] @ Ke0) * u[c_mat], axis=1)))
+        compliance.append(np.sum(E * np.sum((u[c_mat] @ Ke0) * u[c_mat], axis=1)) / (nx * ny * nz))
         dC = np.reshape(-dE * np.sum((u[c_mat] @ Ke0) * u[c_mat], axis=1), (ny, nz, nx), order='F')
-        dC = correlate(dC / dHs, h, mode=filter_bc)[mask]
-        dP = correlate(dP / dHs, h, mode='reflect')[mask]
+        # dC = correlate(dC / dHs, h, mode=filter_bc)[mask]
+        # dP = correlate(dP / dHs, h, mode=filter_bc)[mask]
         #   ________________________________________________________________
-        x[mask], vo, co = optimality_criterion(x[mask], dC, P[mask], dP, vf, cf, max(0.15 * 0.96 ** loop, move))
+        x[mask], vo, co = optimality_criterion(x[mask], dC[mask], P[mask], dP[mask], vf, cf, max(0.15 * 0.96 ** loop, move))
         volume.append(vo)
         cost.append(co)
         change = 1 if loop < 2 else abs((compliance[-2] - compliance[-1]) / compliance[0])
         penalty, beta = cnt(penalty, penalCnt, loop), cnt(beta, betaCnt, loop)
         #   ________________________________________________________________
         print(f"Design cycle {str(loop).rjust(3, '0')}: Change={change:0.6f}, "
-              f"Compliance={compliance[-1]:0.4e}, Volume={volume[-1]:0.3f}, Cost={cost[-1]:0.3f}")
+              f"Compliance={compliance[-1]:0.3e}, Volume={volume[-1]:0.3f}, Cost={cost[-1]:0.3f}")
         np.save(f_name, np.moveaxis(x_phys, -1, 0))
 
     print(f'Model converged in {(time.time() - start):0.2f} seconds. Final compliance = {compliance[-1]}')
@@ -167,7 +167,7 @@ def read_options(input_path):
     options = pd.read_excel(input_path, sheet_name='Options')
     nx, ny, nz, vf, cf, penalty, max_it, move, ft, filter_bc, r_min, eta, beta = options['Value']
     nx, ny, nz, penalty, ft, filter_bc = np.array((nx, ny, nz, penalty, ft, filter_bc), dtype=np.int32)
-    filter_bc = 'reflect' if filter_bc == 1 else 'constant'
+    filter_bc = ['constant', 'reflect', 'nearest', 'mirror', 'wrap'][filter_bc]
     return nx, ny, nz, vf, cf, penalty, ft, filter_bc, max_it, r_min, eta, beta, move
 
 
@@ -176,6 +176,8 @@ def read_materials(input_path):
     D = material_df['Density'].tolist()
     E = material_df['Elasticity'].tolist()
     P = material_df['Cost'].tolist()
+    E[E == 0] = 1e-4
+    P[P == 0] = 1e-4
     M_name = material_df['Material'].tolist()
     M_color = material_df['Color'].tolist()
     return D, E, P, M_name, M_color
@@ -212,7 +214,21 @@ def read_pres(input_path, nx, ny, nz):
 
 
 arguments = [
-    (40, 3, 'mirror', 1.80),
+    (40, 3, 'reflect', 1.74),
+    # (40, 3, 'reflect', 1.80),
+    # (40, 3, 'reflect', 2.00),
+    # (40, 3, 'reflect', 3.00),
+    # (40, 3, 'reflect', 5.00),
+    # (40, 3, 'constant', np.sqrt(3)),
+    # (40, 3, 'constant', 1.80),
+    # (40, 3, 'constant', 2.00),
+    # (40, 3, 'constant', 3.00),
+    # (40, 3, 'constant', 5.00),
+    # (40, 3, 'nearest', np.sqrt(3)),
+    # (40, 3, 'mirror', np.sqrt(3)),
+    # (40, 3, 'wrap', np.sqrt(3)),
+    # (40, 1, 'reflect', np.sqrt(3)),
+    # (40, 2, 'reflect', np.sqrt(3)),
 ]
 
 for nn, fil, fil_bc, r in arguments:
@@ -221,7 +237,7 @@ for nn, fil, fil_bc, r in arguments:
 
     empty = np.zeros(shape=(500,)) * np.nan
     sheets = ['Compliance', 'Volume', 'Cost']
-    dfs = [pd.read_excel('runs/data.xlsx', sheet_name=s) for s in sheets]
+    dfs = [pd.read_excel('runs/40/data.xlsx', sheet_name=s) for s in sheets]
     for df, sheet_name in zip(dfs, sheets):
         empty[0:len(comp)] = [comp, vol_f, pri_f][sheets.index(sheet_name)]
         df[name_format] = empty

@@ -5,15 +5,15 @@ import pyvista as pv
 
 
 class Plot3D:
-    def __init__(self, path, density, name, colors, thresh=0.3):
+    def __init__(self, path, density, name, colors, thresh=0.3, zoom=0):
         self.path, self.interactive, self.init = path, False, False
         self.threshold, self.densities, self.names, self.colors = thresh, density[1:], name[1:], colors[1:]
         self.x = np.load(path)
-        self.grid = pv.ImageData(dimensions=self.x.shape, spacing=(1, 1, 1), origin=(0, 0, 0))
+        self.grid = pv.ImageData(dimensions=self.x.shape)
         self.volume = self.grid.volume
         self.p = pv.Plotter(shape=(1, 2))
         self.p.add_mesh(self.grid, color='gray', opacity=0, name='blank')
-        # self.p.camera.zoom(0.9)
+        if zoom != 0: self.p.camera.zoom(zoom)
         self.p.subplot(0, 1)
         self.p.add_slider_widget(self._th, [0, 1], thresh, 'Threshold', (0.1, 0.9), style='modern', fmt='%0.2f')
         self.p.add_bounding_box()
@@ -69,4 +69,4 @@ def view(path):
     p.update(path, interactive=False)
 
 
-# view('runs/45-M-5.00-3.npy')
+view('x.npy')

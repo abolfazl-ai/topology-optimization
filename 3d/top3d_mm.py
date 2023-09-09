@@ -2,12 +2,12 @@ import time
 import numpy as np
 import pandas as pd
 from cvxopt import cholmod, matrix, spmatrix
-from scipy.ndimage import correlate, convolve
+from scipy.ndimage import correlate
 from scipy.sparse import csc_matrix
 from plot import Plot3D
 
 
-def top3d_mm(input_path='amir.xlsx', plot=False):
+def top3d_mm(input_path='input.xlsx', plot=False):
     nx, ny, nz, vf, cf, penalty, ft, filter_bc, max_it, r_min, eta, beta, move = read_options(input_path)
     penalCnt, betaCnt = [50, 3, 25, 0.25], [250, 16, 25, 2]
     #   ________________________________________________________________
@@ -19,17 +19,15 @@ def top3d_mm(input_path='amir.xlsx', plot=False):
     Ke, Ke0, c_mat, indexes = element_stiffness(nx, ny, nz, 0.3, node_numbers)
     h, Hs, dHs = prepare_filter(ny, nx, nz, r_min, filter_bc)
     #   ________________________________________________________________
-    dsK, dV = np.zeros((ny, nz, nx)), np.zeros((ny, nz, nx))
-    dV[mask] = 1 / (elem_num * vf)
-
-    x, dE = pres.copy(), np.zeros((ny, nz, nx))
+    x, dE, compliance, volume, cost = pres.copy(), np.zeros((ny, nz, nx)), [], [], []
     np.save('x.npy', np.moveaxis(x, -1, 0))
-    p = Plot3D('x.npy', densities, names, colors)
+    p = Plot3D('x.npy', densities, names, colors, zoom=0.9)
     x[mask] = (vf * (elem_num - pres[~mask].size)) / pres[mask].size
-    x_phys, x_old, change, loop = x.copy(), 1, 1, 0
+    x_phys, change, loop = x.copy(), 1, 0
     #   ________________________________________________________________
     start = time.time()
-    while change > 5e-3 and loop < max_it:
+    print(f'Starting loop. N={nx}, Filter={ft}, FilterBC={filter_bc.upper()}, Rmin={r_min}')
+    while change > 0.001 and loop < max_it:
         loop += 1
         x_tilde = correlate(x, h, mode=filter_bc) / Hs
         x_phys[mask] = x_tilde[mask]
@@ -40,35 +38,33 @@ def top3d_mm(input_path='amir.xlsx', plot=False):
                 f = np.mean(prj(x_phys, eta, beta)) - vf
             dHs = Hs / np.reshape(dprj(x_tilde, eta, beta), (ny, nz, nx))
             x_phys = prj(x_phys, eta, beta)
-        change = np.linalg.norm(x_phys - x_old) / np.sqrt(elem_num)
-        x_old = x_phys.copy()
         #   ________________________________________________________________
+        P, dP = ordered_simp_interpolation(x_phys, 1 / penalty, densities, costs)
         E, dE = ordered_simp_interpolation(x_phys, penalty, densities, elasticities, True)
-        Ks = ((Ke[np.newaxis]).T @ np.reshape(E, newshape=(1, E.size))).flatten(order='F')
-
-        dsK[mask] = -penalty * (1 - 0.0001) * x_phys[mask] ** (penalty - 1)
-        sK = ((Ke[np.newaxis]).T * (0.0001 + x_phys.flatten(order='F') ** penalty * (1 - 0.0001))).flatten(order='F')
-
-        K = csc_matrix((sK, (indexes[:, 0], indexes[:, 1])), shape=(dof, dof))[free, :][:, free].tocoo()
+        Ks = ((Ke[np.newaxis]).T * E).flatten(order='F')
+        K = csc_matrix((Ks, (indexes[:, 0], indexes[:, 1])), shape=(dof, dof))[free, :][:, free].tocoo()
         u, b = np.zeros(dof), force[free]
         K = spmatrix(K.data, K.row.astype(np.int32), K.col.astype(np.int32))
         cholmod.linsolve(K, b)
         u[free] = np.array(b)[:, 0]
         #   ________________________________________________________________
-        dC = np.reshape(dsK.flatten(order='F') * np.sum((u[c_mat] @ Ke0) * u[c_mat], axis=1),
-                        (ny, nz, nx), order='F')
+        compliance.append(np.sum(E * np.sum((u[c_mat] @ Ke0) * u[c_mat], axis=1)) / (nx * ny * nz))
+        dC = np.reshape(-dE * np.sum((u[c_mat] @ Ke0) * u[c_mat], axis=1), (ny, nz, nx), order='F')
         dC = correlate(dC / dHs, h, mode=filter_bc)
-        P, dP = ordered_simp_interpolation(x_phys, 1 / penalty, densities, costs)
         dP = correlate(dP / dHs, h, mode=filter_bc)
         #   ________________________________________________________________
-        x[mask] = optimality_criterion(x, dC, P, dP, vf, cf, max(0.15 * 0.96 ** loop, move))[mask]
+        x[mask], vo, co = optimality_criterion(x[mask], dC[mask], P[mask], dP[mask], vf, cf, max(0.15 * 0.96 ** loop, move))
+        volume.append(vo)
+        cost.append(co)
+        change = 1 if loop < 2 else abs((compliance[-2] - compliance[-1]) / compliance[0])
         penalty, beta = cnt(penalty, penalCnt, loop), cnt(beta, betaCnt, loop)
         #   ________________________________________________________________
-        print(f"Iteration = {str(loop).rjust(3, '0')}, Change = {change:0.6f}")
+        print(f"Design cycle {str(loop).rjust(3, '0')}: Change={change:0.6f}, "
+              f"Compliance={compliance[-1]:0.3e}, Volume={volume[-1]:0.3f}, Cost={cost[-1]:0.3f}")
         np.save('x.npy', np.moveaxis(x_phys, -1, 0))
         if plot: p.update('x.npy', interactive=True)
 
-    print(f'Model converged in {(time.time() - start):0.2f} seconds')
+    print(f'Model converged in {(time.time() - start):0.2f} seconds. Final compliance = {compliance[-1]}')
     np.save('final.npy', np.moveaxis(x_phys, -1, 0))
     p.update('final.npy', interactive=False)
 
@@ -106,13 +102,15 @@ def optimality_criterion(x, dC, P, dP, vf, cf, move):
     x_new, xU, xL = x.copy(), x + move, x - move
     LV = [0, 2 * np.max(-dC)]
     LP = [0, 2 * np.max(-dC / (P + x * dP))]
+    volume, cost = 0, 0
     while abs(LV[1] - LV[0]) / max(LV[1] + LV[0], 1E-9) > 1e-6 or abs(LP[1] - LP[0]) / max(LP[1] + LP[0], 1E-9) > 1e-6:
         l_mid_v, l_mid_p = 0.5 * (LV[0] + LV[1]), 0.5 * (LP[0] + LP[1])
         B = -dC / (l_mid_v + l_mid_p * P + l_mid_p * x * dP)
         x_new = np.maximum(np.maximum(np.minimum(np.minimum(x * np.sqrt(np.abs(B)), xU), 1), xL), 1E-5)
-        LV[0], LV[1] = (l_mid_v, LV[1]) if np.sum(x_new) / x.size > vf else (LV[0], l_mid_v)
-        LP[0], LP[1] = (l_mid_p, LP[1]) if np.sum(x_new * P) / x.size > cf else (LP[0], l_mid_p)
-    return x_new
+        volume, cost = np.sum(x_new) / x.size, np.sum(x_new * P) / x.size
+        LV[0], LV[1] = (l_mid_v, LV[1]) if volume > vf else (LV[0], l_mid_v)
+        LP[0], LP[1] = (l_mid_p, LP[1]) if cost > cf else (LP[0], l_mid_p)
+    return x_new, volume, cost
 
 
 def prepare_filter(ny, nx, nz, r_min, filter_bc):
@@ -181,6 +179,9 @@ def read_materials(input_path):
     D = material_df['Density'].tolist()
     E = material_df['Elasticity'].tolist()
     P = material_df['Cost'].tolist()
+    D[D == 0] = 1e-3
+    E[E == 0] = 1e-3
+    P[P == 0] = 1e-3
     M_name = material_df['Material'].tolist()
     M_color = material_df['Color'].tolist()
     return D, E, P, M_name, M_color
@@ -197,8 +198,7 @@ def read_bc(input_path, nx, ny, nz, node_numbers):
         nr = [(int(np.floor(s * n)), int(np.floor(e * n)) + 1) for n, s, e in list(zip((nx, ny, nz), start, end))]
         nodes = node_numbers[nr[1][0]:nr[1][1], nr[2][0]:nr[2][1], nr[0][0]:nr[0][1]].flatten()
         for i, (d, f) in enumerate(zip(displacement, force)):
-            s = np.sin((np.arange(0, ny + 1) / ny) * np.pi)
-            force_vector[(3 * nodes + i).tolist(), 0] = matrix(0 if np.isnan(f) else f * s, (nodes.size, 1))
+            force_vector[(3 * nodes + i).tolist(), 0] = matrix(0 if np.isnan(f) else f, (nodes.size, 1))
             fixed.extend([] if np.isnan(d) else (3 * nodes + i).tolist())
     free = np.setdiff1d(np.arange(0, dof), fixed).tolist()
     return free, force_vector
@@ -217,4 +217,4 @@ def read_pres(input_path, nx, ny, nz):
     return pres, mask
 
 
-top3d_mm(plot=True)
+top3d_mm(input_path='input.xlsx', plot=True)

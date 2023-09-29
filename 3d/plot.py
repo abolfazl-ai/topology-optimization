@@ -69,4 +69,4 @@ def view(path):
     p.update(path, interactive=False)
 
 
-view('x.npy')
+# view('x.npy')

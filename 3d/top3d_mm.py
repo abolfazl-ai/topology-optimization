@@ -8,26 +8,27 @@ from plot import Plot3D
 
 
 def top3d_mm(input_path='input.xlsx', plot=False):
-    nx, ny, nz, vf, cf, penalty, ft, filter_bc, max_it, r_min, eta, beta, move = read_options(input_path)
+    nx, ny, nz, vf, penalty, ft, filter_bc, max_it, r_min, eta, beta, move = read_options(input_path)
     penalCnt, betaCnt = [50, 3, 25, 0.25], [250, 16, 25, 2]
     #   ________________________________________________________________
     node_numbers = np.reshape(range((1 + nx) * (1 + ny) * (1 + nz)), (1 + ny, 1 + nz, 1 + nx), order='F')
     elem_num, dof = nx * ny * nz, (1 + ny) * (1 + nx) * (1 + nz) * 3
     pres, mask = read_pres(input_path, nx, ny, nz)
     free, force = read_bc(input_path, nx, ny, nz, node_numbers)
-    densities, elasticities, costs, names, colors = read_materials(input_path)
+    densities, elasticities, names, colors = read_materials(input_path)
     Ke, Ke0, c_mat, indexes = element_stiffness(nx, ny, nz, 0.3, node_numbers)
     h, Hs, dHs = prepare_filter(ny, nx, nz, r_min, filter_bc)
     #   ________________________________________________________________
-    x, dE, compliance, volume, cost = pres.copy(), np.zeros((ny, nz, nx)), [], [], []
+    x, dE, dV, compliance, volume = pres.copy(), np.zeros((ny, nz, nx)), np.zeros((ny, nz, nx)), [], []
     np.save('x.npy', np.moveaxis(x, -1, 0))
     p = Plot3D('x.npy', densities, names, colors, zoom=0.9)
+    dV[mask] = 1 / (elem_num * vf)
     x[mask] = (vf * (elem_num - pres[~mask].size)) / pres[mask].size
     x_phys, change, loop = x.copy(), 1, 0
     #   ________________________________________________________________
     start = time.time()
     print(f'Starting loop. N={nx}, Filter={ft}, FilterBC={filter_bc.upper()}, Rmin={r_min}')
-    while change > 0.001 and loop < max_it:
+    while change > 0.0001 and loop < max_it:
         loop += 1
         x_tilde = correlate(x, h, mode=filter_bc) / Hs
         x_phys[mask] = x_tilde[mask]
@@ -39,7 +40,6 @@ def top3d_mm(input_path='input.xlsx', plot=False):
             dHs = Hs / np.reshape(dprj(x_tilde, eta, beta), (ny, nz, nx))
             x_phys = prj(x_phys, eta, beta)
         #   ________________________________________________________________
-        P, dP = ordered_simp_interpolation(x_phys, 1 / penalty, densities, costs)
         E, dE = ordered_simp_interpolation(x_phys, penalty, densities, elasticities, True)
         Ks = ((Ke[np.newaxis]).T * E).flatten(order='F')
         K = csc_matrix((Ks, (indexes[:, 0], indexes[:, 1])), shape=(dof, dof))[free, :][:, free].tocoo()
@@ -50,17 +50,16 @@ def top3d_mm(input_path='input.xlsx', plot=False):
         #   ________________________________________________________________
         compliance.append(np.sum(E * np.sum((u[c_mat] @ Ke0) * u[c_mat], axis=1)) / (nx * ny * nz))
         dC = np.reshape(-dE * np.sum((u[c_mat] @ Ke0) * u[c_mat], axis=1), (ny, nz, nx), order='F')
-        dC = correlate(dC / dHs, h, mode=filter_bc)
-        dP = correlate(dP / dHs, h, mode=filter_bc)
+        dc = correlate(dC / dHs, h, mode='reflect')
+        dV0 = correlate(dV / dHs, h, mode='reflect')
         #   ________________________________________________________________
-        x[mask], vo, co = optimality_criterion(x[mask], dC[mask], P[mask], dP[mask], vf, cf, max(0.15 * 0.96 ** loop, move))
-        volume.append(vo)
-        cost.append(co)
+        x = optimality_criterion(x, vf, move, dc, dV0, mask)
+        volume.append(np.mean(x))
         change = 1 if loop < 2 else abs((compliance[-2] - compliance[-1]) / compliance[0])
         penalty, beta = cnt(penalty, penalCnt, loop), cnt(beta, betaCnt, loop)
         #   ________________________________________________________________
         print(f"Design cycle {str(loop).rjust(3, '0')}: Change={change:0.6f}, "
-              f"Compliance={compliance[-1]:0.3e}, Volume={volume[-1]:0.3f}, Cost={cost[-1]:0.3f}")
+              f"Compliance={compliance[-1]:0.3e}, Volume={volume[-1]:0.3f}")
         np.save('x.npy', np.moveaxis(x_phys, -1, 0))
         if plot: p.update('x.npy', interactive=True)
 
@@ -98,19 +97,16 @@ def ordered_simp_interpolation(x, penalty, X, Y, flatten=False):
     return y.flatten(order='F') if flatten else y, dy.flatten(order='F') if flatten else dy
 
 
-def optimality_criterion(x, dC, P, dP, vf, cf, move):
-    x_new, xU, xL = x.copy(), x + move, x - move
-    LV = [0, 2 * np.max(-dC)]
-    LP = [0, 2 * np.max(-dC / (P + x * dP))]
-    volume, cost = 0, 0
-    while abs(LV[1] - LV[0]) / max(LV[1] + LV[0], 1E-9) > 1e-6 or abs(LP[1] - LP[0]) / max(LP[1] + LP[0], 1E-9) > 1e-6:
-        l_mid_v, l_mid_p = 0.5 * (LV[0] + LV[1]), 0.5 * (LP[0] + LP[1])
-        B = -dC / (l_mid_v + l_mid_p * P + l_mid_p * x * dP)
-        x_new = np.maximum(np.maximum(np.minimum(np.minimum(x * np.sqrt(np.abs(B)), xU), 1), xL), 1E-5)
-        volume, cost = np.sum(x_new) / x.size, np.sum(x_new * P) / x.size
-        LV[0], LV[1] = (l_mid_v, LV[1]) if volume > vf else (LV[0], l_mid_v)
-        LP[0], LP[1] = (l_mid_p, LP[1]) if cost > cf else (LP[0], l_mid_p)
-    return x_new, volume, cost
+def optimality_criterion(x, vol_f, move, dc, dV0, mask):
+    x_new, xT = x.copy(), x[mask]
+    xU, xL = xT + move, xT - move
+    ocP = xT * np.real(np.sqrt(-dc[mask] / dV0[mask]))
+    LM = [0, np.mean(ocP) / vol_f]
+    while abs((LM[1] - LM[0]) / (LM[1] + LM[0])) > 1e-4:
+        l_mid = 0.5 * (LM[0] + LM[1])
+        x_new[mask] = np.maximum(np.minimum(np.minimum(ocP / l_mid, xU), 1), xL)
+        LM[0], LM[1] = (l_mid, LM[1]) if np.mean(x_new) > vol_f else (LM[0], l_mid)
+    return x_new
 
 
 def prepare_filter(ny, nx, nz, r_min, filter_bc):
@@ -168,23 +164,21 @@ def element_stiffness(nx, ny, nz, nu, node_numbers):
 
 def read_options(input_path):
     options = pd.read_excel(input_path, sheet_name='Options')
-    nx, ny, nz, vf, cf, penalty, max_it, move, ft, filter_bc, r_min, eta, beta = options['Value']
+    nx, ny, nz, vf, penalty, max_it, move, ft, filter_bc, r_min, eta, beta = options['Value']
     nx, ny, nz, penalty, ft, filter_bc = np.array((nx, ny, nz, penalty, ft, filter_bc), dtype=np.int32)
     filter_bc = ['constant', 'reflect', 'nearest', 'mirror', 'wrap'][filter_bc]
-    return nx, ny, nz, vf, cf, penalty, ft, filter_bc, max_it, r_min, eta, beta, move
+    return nx, ny, nz, vf, penalty, ft, filter_bc, max_it, r_min, eta, beta, move
 
 
 def read_materials(input_path):
     material_df = pd.read_excel(input_path, sheet_name='Materials')
     D = material_df['Density'].tolist()
     E = material_df['Elasticity'].tolist()
-    P = material_df['Cost'].tolist()
-    D[D == 0] = 1e-3
-    E[E == 0] = 1e-3
-    P[P == 0] = 1e-3
+    D[D == 0] = 1e-9
+    E[E == 0] = 1e-9
     M_name = material_df['Material'].tolist()
     M_color = material_df['Color'].tolist()
-    return D, E, P, M_name, M_color
+    return D, E, M_name, M_color
 
 
 def read_bc(input_path, nx, ny, nz, node_numbers):

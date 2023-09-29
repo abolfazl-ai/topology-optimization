@@ -38,7 +38,7 @@ def top3d_mm(input_path='input.xlsx', plot=False):
                 eta = eta - f / np.mean(deta(x_phys.flatten(), eta, beta))
                 f = np.mean(prj(x_phys, eta, beta)) - vf
             dHs = Hs / np.reshape(dprj(x_tilde, eta, beta), (ny, nz, nx))
-            x_phys = prj(x_phys, eta, beta)
+            x_phys[mask] = prj(x_phys, eta, beta)[mask]
         #   ________________________________________________________________
         E, dE = ordered_simp_interpolation(x_phys, penalty, densities, elasticities, True)
         Ks = ((Ke[np.newaxis]).T * E).flatten(order='F')
@@ -53,7 +53,7 @@ def top3d_mm(input_path='input.xlsx', plot=False):
         dc = correlate(dC / dHs, h, mode='reflect')
         dV0 = correlate(dV / dHs, h, mode='reflect')
         #   ________________________________________________________________
-        x = optimality_criterion(x, vf, move, dc, dV0, mask)
+        x[mask] = optimality_criterion(x, vf, move, dc, dV0, mask)[mask]
         volume.append(np.mean(x))
         change = 1 if loop < 2 else abs((compliance[-2] - compliance[-1]) / compliance[0])
         penalty, beta = cnt(penalty, penalCnt, loop), cnt(beta, betaCnt, loop)

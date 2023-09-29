@@ -5,11 +5,12 @@ import pyvista as pv
 
 
 class Plot3D:
-    def __init__(self, path, density, name, colors, thresh=0.3, zoom=0):
+    def __init__(self, path, density, name, colors, thresh=0.3, zoom=0, show_edges=False):
+        pv.global_theme.show_edges = show_edges
         self.path, self.interactive, self.init = path, False, False
         self.threshold, self.densities, self.names, self.colors = thresh, density[1:], name[1:], colors[1:]
         self.x = np.load(path)
-        self.grid = pv.ImageData(dimensions=self.x.shape)
+        self.grid = pv.ImageData(dimensions=np.array(self.x.shape) + 1)
         self.volume = self.grid.volume
         self.p = pv.Plotter(shape=(1, 2))
         self.p.add_mesh(self.grid, color='gray', opacity=0, name='blank')
@@ -44,11 +45,12 @@ class Plot3D:
     def _show_data(self):
         array = self.x.copy()
         for i, d in enumerate(self.densities):
-            array[(self.x > ((self.densities[i - 1] + d) / 2 if i > 0 else d))] = i
+            array[(self.x >= ((self.densities[i - 1] + d) / 2 if i > 0 else d))] = i + 1
 
-        self.grid.point_data['Density'] = self.x.flatten(order="F")
-        self.grid.point_data['Color'] = array.flatten(order="F")
-        self.grid = self.grid.gaussian_smooth(scalars='Color')
+        self.grid.cell_data['Density'] = self.x.flatten(order="F")
+        self.grid.cell_data['Color'] = array.flatten(order="F")
+        self.grid = self.grid.cell_data_to_point_data()
+        # self.grid = self.grid.gaussian_smooth(scalars='Color')
         self.roi = self.grid.clip_scalar(value=self.threshold, scalars='Density', invert=False)
 
         if self.roi.points.size > 0:
@@ -65,7 +67,7 @@ class Plot3D:
 
 
 def view(path):
-    p = Plot3D(path, [0, 1], ['V', 'A'], ['w', 'b'])
+    p = Plot3D(path, [0, 0.85, 1], ['V', 'A', 'B'], ['w', 'b', 'r'], show_edges=True)
     p.update(path, interactive=False)
 
 

@@ -66,8 +66,8 @@ class Plot3D:
 
 
 def view(path):
-    p = Plot3D(path, [0, 1, 0.85], ['V', 'TPU', 'ABS'], ['w', 'r', 'b'], show_edges=True)
+    p = Plot3D(path, [0, 1, 0.85], ['V', 'TPU', 'ABS'], ['w', 'r', 'b'], show_edges=False)
     p.update(path, interactive=False)
 
 
-# view('final.npy')
+# view('runs/30x30x30-3-C-1.74.npy')

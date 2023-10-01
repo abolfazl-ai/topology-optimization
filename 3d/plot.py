@@ -1,5 +1,3 @@
-import time
-
 import numpy as np
 import pyvista as pv
 
@@ -45,7 +43,8 @@ class Plot3D:
     def _show_data(self):
         array = self.x.copy()
         for i, d in enumerate(self.densities):
-            array[(self.x >= ((self.densities[i - 1] + d) / 2 if i > 0 else d))] = i + 1
+            array[(self.x >= ((self.densities[i - 1] + d) / 2 if i > 0 else d)) &
+                  (self.x < ((self.densities[i + 1] + d) / 2 if i < len(self.densities) - 1 else d))] = i + 1
 
         self.grid.cell_data['Density'] = self.x.flatten(order="F")
         self.grid.cell_data['Color'] = array.flatten(order="F")
@@ -67,8 +66,8 @@ class Plot3D:
 
 
 def view(path):
-    p = Plot3D(path, [0, 0.85, 1], ['V', 'A', 'B'], ['w', 'b', 'r'], show_edges=True)
+    p = Plot3D(path, [0, 1, 0.85], ['V', 'TPU', 'ABS'], ['w', 'r', 'b'], show_edges=True)
     p.update(path, interactive=False)
 
 
-# view('x.npy')
+# view('final.npy')

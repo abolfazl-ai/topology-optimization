@@ -70,4 +70,4 @@ def view(path):
     p.update(path, interactive=False)
 
 
-# view('runs/30x30x30-3-C-1.74.npy')
+# view('runs/30x30x30-3-C-3.46.npy')

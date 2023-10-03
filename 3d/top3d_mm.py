@@ -8,9 +8,8 @@ def top3d_mm(nx, ny, nz, node_numbers, volume_fraction,  # Mesh specifications a
              free, force, pres, mask,  # Boundary conditions and preserved regions
              densities, elasticities,  # Materials
              ft, filter_bc, r_min, eta, beta,  # Filter options
-             max_it, move, penalty, penal_cnt, beta_cnt,  # Optimization options
+             max_it, x_con, c_con, move, penalty, penal_cnt, beta_cnt, move_cnt,  # Optimization options
              iter_callback):
-
     elem_num, dof = nx * ny * nz, (1 + ny) * (1 + nx) * (1 + nz) * 3
     Ke, Ke0, c_mat, indexes = element_stiffness(nx, ny, nz, 0.3, node_numbers)
     h, Hs, dHs = prepare_filter(ny, nx, nz, r_min, filter_bc)
@@ -18,8 +17,8 @@ def top3d_mm(nx, ny, nz, node_numbers, volume_fraction,  # Mesh specifications a
     x, dE, dV, compliance, volume = pres.copy(), np.zeros((ny, nz, nx)), np.zeros((ny, nz, nx)), [], []
     dV[mask] = 1 / (elem_num * volume_fraction)
     x[mask] = (volume_fraction * (elem_num - pres[~mask].size)) / pres[mask].size
-    x_phys, change, loop = x.copy(), 1, 0
-    while change > 0.0001 and loop < max_it:
+    x_phys, x_old, c_change, x_change, loop = x.copy(), x.copy(), 1, 1, 0
+    while c_change > c_con and x_change > x_con and loop < max_it:
         loop += 1
         x_tilde = correlate(x, h, mode=filter_bc) / Hs
         x_phys[mask] = x_tilde[mask]
@@ -42,14 +41,16 @@ def top3d_mm(nx, ny, nz, node_numbers, volume_fraction,  # Mesh specifications a
         dC = np.reshape(-dE * np.sum((u[c_mat] @ Ke0) * u[c_mat], axis=1), (ny, nz, nx), order='F')
         dC = correlate(dC / dHs, h, mode=filter_bc)
         dV0 = correlate(dV / dHs, h, mode=filter_bc)
-        #   ________________________________________________________________
         x[mask] = optimality_criterion(x, volume_fraction, move, dC, dV0, mask)[mask]
+        #   ________________________________________________________________
         volume.append(np.mean(x))
         compliance.append(np.sum(E * np.sum((u[c_mat] @ Ke0) * u[c_mat], axis=1)) / (nx * ny * nz))
-        change = 1 if loop < 2 else abs((compliance[-2] - compliance[-1]) / compliance[0])
-        penalty, beta = cnt(penalty, penal_cnt, loop), cnt(beta, beta_cnt, loop)
-        #   ________________________________________________________________
-        iter_callback(loop, x_phys, change, compliance[-1], volume[-1])
+        c_change = move if loop < 3 else abs(np.sqrt((compliance[-2] - compliance[-1]) ** 2 +
+                                                     (compliance[-3] - compliance[-2]) ** 2) / compliance[0])
+        x_change = np.linalg.norm(x_phys - x_old) / np.sqrt(elem_num)
+        x_old = x_phys.copy()
+        penalty, beta, move = cnt(penalty, penal_cnt, loop), cnt(beta, beta_cnt, loop), cnt(move, move_cnt, loop)
+        iter_callback(loop, x_phys, x_change, c_change, compliance[-1], volume[-1])
 
     return x_phys, compliance, volume
 
@@ -68,7 +69,7 @@ def dprj(v, eta, beta):
 
 
 def cnt(v, vCnt, el):
-    condition = (el >= vCnt[0]) and (v < vCnt[1]) and (el % vCnt[2] == 0)
+    condition = (el >= vCnt[0]) and (abs(v - vCnt[1]) >= abs(vCnt[3])) and (el % vCnt[2] == 0)
     return v + condition * vCnt[3]
 
 

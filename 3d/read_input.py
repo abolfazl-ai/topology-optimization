@@ -5,10 +5,10 @@ from cvxopt import matrix
 
 def read_options(input_path):
     options = pd.read_excel(input_path, sheet_name='Options')
-    nx, ny, nz, vf, penalty, max_it, move, ft, filter_bc, r_min, eta, beta = options['Value']
+    nx, ny, nz, vf, penalty, max_it, x_converge, c_converge, move, ft, filter_bc, r_min, eta, beta = options['Value']
     nx, ny, nz, penalty, ft, filter_bc = np.array((nx, ny, nz, penalty, ft, filter_bc), dtype=np.int32)
     filter_bc = ['constant', 'reflect', 'nearest', 'mirror', 'wrap'][filter_bc]
-    return nx, ny, nz, vf, penalty, ft, filter_bc, max_it, r_min, eta, beta, move
+    return nx, ny, nz, vf, penalty, ft, filter_bc, max_it, x_converge, c_converge, r_min, eta, beta, move
 
 
 def read_materials(input_path):

@@ -69,7 +69,7 @@ def auto_run(output_path):
         save_data(output_path + '/data', name_format, compliance, volume)
 
 
-_, cc, vv = single_run('runs/press-concentrated.xlsx', 'runs/press-concentrated')
-save_data('runs/data', 'press-concentrated', cc, vv)
+_, cc, vv = single_run('tests/amir.xlsx', 'tests/amir')
+# save_data('runs/data', 'press-concentrated', cc, vv)
 
 # auto_run('runs')

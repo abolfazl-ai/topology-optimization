@@ -47,7 +47,7 @@ def top3d_mm(nx, ny, nz, node_numbers, volume_fraction,  # Mesh specifications a
         compliance.append(np.sum(E * np.sum((u[c_mat] @ Ke0) * u[c_mat], axis=1)) / (nx * ny * nz))
         c_change = move if loop < 3 else abs(np.sqrt((compliance[-2] - compliance[-1]) ** 2 +
                                                      (compliance[-3] - compliance[-2]) ** 2) / compliance[0])
-        x_change = np.linalg.norm(x_phys - x_old) / np.sqrt(elem_num)
+        x_change = move if loop < 3 else np.linalg.norm(x_phys - x_old) / np.sqrt(elem_num)
         x_old = x_phys.copy()
         penalty, beta, move = cnt(penalty, penal_cnt, loop), cnt(beta, beta_cnt, loop), cnt(move, move_cnt, loop)
         iter_callback(loop, x_phys, x_change, c_change, compliance[-1], volume[-1])

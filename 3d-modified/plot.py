@@ -4,10 +4,10 @@ import vtk
 
 
 class Plot3D:
-    def __init__(self, path, density, name, colors, thresh=0.3, zoom=0, show_edges=False):
+    def __init__(self, path, materials, thresh=0.3, zoom=0, show_edges=True):
         pv.global_theme.show_edges = show_edges
-        self.path, self.interactive, self.init = path, False, False
-        self.threshold, self.densities, self.names, self.colors = thresh, density[1:], name[1:], colors[1:]
+        self.path, self.interactive, self.init, self.threshold = path, False, False, thresh
+        self.densities, self.names, self.colors = materials['D'][1:], materials['names'][1:], materials['colors'][1:]
         self.x = np.load(path)
         self.grid = pv.ImageData(dimensions=np.array(self.x.shape) + 1)
         self.volume = self.grid.volume

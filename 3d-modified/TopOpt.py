@@ -70,8 +70,8 @@ class TopOpt:
         c = np.sum(e * np.sum((u[self.c_mat] @ self.fem.k) * u[self.c_mat], axis=1)) / np.prod(self.shape)
         dc = np.reshape(-de * np.sum((u[self.c_mat] @ self.fem.k) * u[self.c_mat], axis=1), self.shape, order='F')
         dc = correlate(dc / self.dhs, self.h, mode=self.filter_bc)
-        dw = correlate(self.dw / self.dhs, self.h, mode=self.filter_bc)
-        return c, dc, np.mean(x), dw
+        w, dw = np.mean(x), correlate(self.dw / self.dhs, self.h, mode=self.filter_bc)
+        return c, dc, w, dw
 
     def optimality_criterion(self, x, dc, dw):
         x_new, xT = x.copy(), x[self.mask]
@@ -91,9 +91,7 @@ class TopOpt:
             x = self.apply_filter(self.x)
             c, dc, w, dw = self.compliance(x)
             self.x[self.mask] = self.optimality_criterion(self.x, dc, dw)[self.mask]
-
-            self.w.append(w)
-            self.c.append(c)
+            self.w.append(w), self.c.append(c)
             self.c_change = self.move if self.loop < 3 else (
                 abs(np.sqrt((self.c[-2] - self.c[-1]) ** 2 + (self.c[-3] - self.c[-2]) ** 2) / np.max(np.abs(self.c))))
             self.x_change = self.move if self.loop < 3 else np.linalg.norm(x_old - self.x) / np.sqrt(self.elem_num)

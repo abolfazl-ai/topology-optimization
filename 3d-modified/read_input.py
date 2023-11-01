@@ -21,6 +21,17 @@ def mesh_model_3d(nx, ny, nz):
             'indexes': (indexes[:, 0], indexes[:, 1]), 'c_mat': cMat}
 
 
+def mesh_model_2d(nx, ny):
+    node_numbers = np.reshape(range((1 + nx) * (1 + ny)), (1 + ny, 1 + nx), order='F')
+    elem_num, dof = nx * ny, (1 + ny) * (1 + nx) * 2
+    cVec = np.reshape(2 * node_numbers[0: -1, 0: -1] + 2, (nx * ny, 1), order='F')
+    cMat = cVec + np.array([0, 1, 2 * ny + 2, 2 * ny + 3, 2 * ny + 0, 2 * ny + 1, -2, -1])
+    sI, sII = np.hstack([np.arange(j, 8) for j in range(8)]), np.hstack([np.tile(j, 7 - j + 1) for j in range(8)])
+    iK, jK = cMat[:, sI].T, cMat[:, sII].T
+    indexes = np.sort(np.hstack((iK.reshape((-1, 1), order='F'), jK.reshape((-1, 1), order='F'))))[:, [1, 0]]
+    return {'shape': (nx, ny), 'dof': dof, 'node_numbers': node_numbers, 'elem_num': elem_num,
+            'indexes': (indexes[:, 0], indexes[:, 1]), 'c_mat': cMat}
+
 def read_options(input_path):
     options = pd.read_excel(input_path, sheet_name='Options')
     nx, ny, nz, vf, penalty, max_it, x_converge, c_converge, move, ft, filter_bc, r, eta, beta = options['Value']

@@ -72,7 +72,7 @@ def auto_run(output_path):
         save_data(output_path + '/data', name_format, compliance, volume)
 
 
-_, cc, vv = single_run('runs/shear-distributed.xlsx', 'runs/shear-distributed')
+_, cc, vv = single_run('tests/bike.xlsx', 'tests/bike')
 # save_data('runs/data', 'shear-concentrated-sm', cc, vv)
 
 # auto_run('mesh')

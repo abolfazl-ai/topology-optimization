@@ -3,7 +3,7 @@ import pandas as pd
 from cvxopt import matrix
 
 
-def mesh_model(nx, ny, nz):
+def mesh_model_3d(nx, ny, nz):
     node_numbers = np.reshape(range((1 + nx) * (1 + ny) * (1 + nz)), (1 + ny, 1 + nz, 1 + nx), order='F')
     elem_num, dof = nx * ny * nz, (1 + ny) * (1 + nx) * (1 + nz) * 3
     cVec = np.reshape(3 * node_numbers[0: -1, 0: -1, 0: -1] + 3, (nx * ny * nz, 1), order='F')
@@ -17,7 +17,6 @@ def mesh_model(nx, ny, nz):
     sI, sII = np.hstack([np.arange(j, 24) for j in range(24)]), np.hstack([np.tile(j, 24 - j) for j in range(24)])
     iK, jK = cMat[:, sI].T, cMat[:, sII].T
     indexes = np.sort(np.hstack((iK.reshape((-1, 1), order='F'), jK.reshape((-1, 1), order='F'))))[:, [1, 0]]
-
     return {'shape': (nx, ny, nz), 'dof': dof, 'node_numbers': node_numbers, 'elem_num': elem_num,
             'indexes': (indexes[:, 0], indexes[:, 1]), 'c_mat': cMat}
 
@@ -27,10 +26,10 @@ def read_options(input_path):
     nx, ny, nz, vf, penalty, max_it, x_converge, c_converge, move, ft, filter_bc, r, eta, beta = options['Value']
     nx, ny, nz, penalty, max_it, ft, filter_bc = np.array((nx, ny, nz, penalty, max_it, ft, filter_bc), dtype=np.int32)
     filter_bc = ['constant', 'reflect', 'nearest', 'mirror', 'wrap'][filter_bc]
-    mesh = mesh_model(nx, ny, nz)
+    mesh = mesh_model_3d(nx, ny, nz)
     filter_params = {'filter': ft, 'filter_bc': filter_bc, 'radius': r, 'eta': eta, 'beta': beta}
     opt_params = {'penalty': penalty, 'volume_fraction': vf, 'move': move,
-                  'maximum_iteration': max_it, 'convergence': (c_converge, x_converge)}
+                  'max_iteration': max_it, 'c_conv': c_converge, 'x_conv': x_converge}
     return mesh, filter_params, opt_params
 
 

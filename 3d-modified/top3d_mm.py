@@ -1,5 +1,3 @@
-import math
-
 import numpy as np
 from scipy.ndimage import correlate
 from finite_element import FEM
@@ -13,7 +11,7 @@ def top3d_mm(mesh, bc, fil, opt, materials, pres, mask, iter_callback):
     dw[mask] = 1 / (mesh['elem_num'] * opt['volume_fraction'])
     x[mask] = (opt['volume_fraction'] * (mesh['elem_num'] - pres[~mask].size)) / pres[mask].size
     x_phys, x_old, c_change, x_change, loop = x.copy(), x.copy(), 1, 1, 0
-    while c_change > opt['convergence'][0] and x_change > opt['convergence'][1] and loop < opt['maximum_iteration']:
+    while c_change > opt['c_conv'] and x_change > opt['x_conv'] and loop < opt['max_iteration']:
         loop += 1
         x_tilde = correlate(x, h, mode=fil['filter_bc']) / Hs
         x_phys[mask] = x_tilde[mask]
@@ -36,12 +34,10 @@ def top3d_mm(mesh, bc, fil, opt, materials, pres, mask, iter_callback):
         #   ________________________________________________________________
         w.append(np.mean(x))
         c.append(np.sum(e * np.sum((u[mesh['c_mat']] @ fem.k) * u[mesh['c_mat']], axis=1)) / np.prod(mesh['shape']))
-        c_change = opt['move'] if loop < 3 else abs(np.sqrt((c[-2] - c[-1]) ** 2 +
-                                                            (c[-3] - c[-2]) ** 2) / c[0])
+        c_change = opt['move'] if loop < 3 else abs(np.sqrt((c[-2] - c[-1]) ** 2 + (c[-3] - c[-2]) ** 2) / c[0])
         x_change = opt['move'] if loop < 3 else np.linalg.norm(x_phys - x_old) / np.sqrt(mesh['elem_num'])
         x_old = x_phys.copy()
         iter_callback(loop, x_phys, x_change, c_change, c[-1], w[-1])
-
     return x_phys, c, w
 
 

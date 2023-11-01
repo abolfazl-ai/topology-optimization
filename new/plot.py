@@ -4,10 +4,10 @@ import vtk
 
 
 class Plot3D:
-    def __init__(self, path, materials, thresh=0.3, zoom=0, show_edges=False):
+    def __init__(self, path, density, name, colors, thresh=0.3, zoom=0, show_edges=False):
         pv.global_theme.show_edges = show_edges
-        self.path, self.interactive, self.init, self.threshold = path, False, False, thresh
-        self.densities, self.names, self.colors = materials['D'][1:], materials['names'][1:], materials['colors'][1:]
+        self.path, self.interactive, self.init = path, False, False
+        self.threshold, self.densities, self.names, self.colors = thresh, density[1:], name[1:], colors[1:]
         self.x = np.load(path)
         self.grid = pv.ImageData(dimensions=np.array(self.x.shape) + 1)
         self.volume = self.grid.volume
@@ -70,7 +70,7 @@ class Plot3D:
 
 
 def view(path, d, n, c, export=False):
-    p = Plot3D(path, d, n, c, show_edges=False)
+    p = Plot3D(path, d, n, c, thresh=0.49, show_edges=False)
     p.update(path, interactive=False)
     if export: p.export(path[0:-3] + 'stl')
 
@@ -79,4 +79,4 @@ if __name__ == '__main__':
     # density, name, colors = [0, 1], ['V', 'Solid'], ['w', 'g']
     density, name, colors = [0, 1, 0.85], ['V', 'TPU', 'ABS'], ['w', 'r', 'b']
     # density, name, colors = [0, 0.5, 1], ['V', 'PCL', 'PLA'], ['w', 'r', 'b']
-    view('runs/shear-distributed.npy', density, name, colors, )
+    view('runs/shear-concentrated.npy', density, name, colors, )

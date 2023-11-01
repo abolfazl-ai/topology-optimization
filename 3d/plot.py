@@ -79,4 +79,4 @@ if __name__ == '__main__':
     density, name, colors = [0, 1], ['V', 'Solid'], ['w', 'g']
     # density, name, colors = [0, 1, 0.85], ['V', 'TPU', 'ABS'], ['w', 'r', 'b']
     # density, name, colors = [0, 0.5, 1], ['V', 'PCL', 'PLA'], ['w', 'r', 'b']
-    view('runs/press-distributed-sm.npy', density, name, colors, )
+    view('tests/bike.npy', density, name, colors, )

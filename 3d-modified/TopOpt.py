@@ -44,10 +44,8 @@ class TopOpt:
         self.x[mask] = (self.vf * (self.elem_num - pres[~mask].size)) / pres[mask].size
 
     def prepare_filter(self, r):
-        dy, dz, dx = np.meshgrid(np.arange(-np.ceil(r) + 1, np.ceil(r)),
-                                 np.arange(-np.ceil(r) + 1, np.ceil(r)),
-                                 np.arange(-np.ceil(r) + 1, np.ceil(r)))
-        h = np.maximum(0, r - np.sqrt(dx ** 2 + dy ** 2 + dz ** 2))
+        ds = np.meshgrid(*(np.arange(-np.ceil(r) + 1, np.ceil(r)) for _ in self.mesh['shape']))
+        h = np.maximum(0, r - np.sqrt(np.sum((n ** 2 for n in ds), axis=0)))
         hs = correlate(np.ones(self.shape), h, mode=self.filter_bc)
         return h, hs, hs.copy()
 

@@ -11,7 +11,7 @@ def top3d_mm(mesh, bc, fil, opt, materials, pres, mask, iter_callback):
     dw[mask] = 1 / (mesh['elem_num'] * opt['volume_fraction'])
     x[mask] = (opt['volume_fraction'] * (mesh['elem_num'] - pres[~mask].size)) / pres[mask].size
     x_phys, x_old, c_change, x_change, loop = x.copy(), x.copy(), 1, 1, 0
-    while c_change > opt['c_conv'] and x_change > opt['x_conv'] and loop < opt['max_iteration']:
+    while c_change > opt['c_conv'] and x_change > opt['x_conv'] and loop < opt['max_it']:
         loop += 1
         x_tilde = correlate(x, h, mode=fil['filter_bc']) / Hs
         x_phys[mask] = x_tilde[mask]

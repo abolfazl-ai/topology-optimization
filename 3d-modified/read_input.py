@@ -8,7 +8,7 @@ def get_input(input_path):
     pres, mask = read_pres(input_path, mesh)
     bc = read_bc(input_path, mesh)
     materials = read_materials(input_path)
-    return mesh, filter_params, opt_params, pres, mask, bc, materials
+    return mesh, bc, filter_params, opt_params, materials, pres, mask
 
 
 def read_options(input_path):

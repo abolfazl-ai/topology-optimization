@@ -31,7 +31,7 @@ class TopOpt:
     def __init__(self, mesh, bc, fil, opt, materials, pres, mask, iter_callback):
         self.mesh, self.bc, self.fil, self.opt = mesh, bc, fil, opt
         (self.vf, self.p, self.move, self.c_conv, self.x_conv, self.max_it) = \
-            [opt[key] for key in ('volume_fraction', 'penalty', 'move', 'c_conv', 'x_conv', 'max_iteration')]
+            [opt[key] for key in ('volume_fraction', 'penalty', 'move', 'c_conv', 'x_conv', 'max_it')]
         self.ft, self.filter_bc = [fil[key] for key in ('filter', 'filter_bc')]
         self.r, self.eta, self.beta = [fil[key] for key in ('radius', 'eta', 'beta')]
         self.shape, self.c_mat, self.elem_num = [mesh[key] for key in ('shape', 'c_mat', 'elem_num')]

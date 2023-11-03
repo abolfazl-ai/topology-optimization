@@ -17,25 +17,23 @@ def save_data(save_path, column_name, compliance, volume):
         [df.to_excel(writer, sheet_name=s, index=False) for df, s in zip(dfs, sheets)]
 
 
-def iter_print(loop, x, x_change, c_change, compliance, weight, save_path, plotter):
-    title = (f"Iteration {str(loop).rjust(3, '0')}: XChange={x_change:0.6f}, "
-             f"CChange={c_change:0.6f}, Compliance={compliance:0.3e}, Weight={weight * 100:0.1f}%")
-    print(title)
+def iter_print(loop, x, x_ch, c_ch, c, w, save_path, plotter):
+    print(f'{loop:03}' + ' ' * 13 + f'{x_ch:<16.6f}{c_ch:<16.6f}{c:<16.4E}{100 * w:<0.2f}%')
     np.save(save_path + '.npy', x)
-    if plotter is not None: plotter.update(save_path + '.npy', title=title, interactive=True)
+    if plotter is not None: plotter.update(save_path + '.npy', f'Iteration {loop:03}: C={c:0.4e}', True)
 
 
 def single_run(input_path, save_path, plot=True):
-    mesh, bc, filter_params, opt_params, materials, pres, mask = get_input(input_path)
-    np.save(save_path + '.npy', np.moveaxis(pres, -1, 0))
+    mesh, bc, fil, opt, materials, pres, mask = get_input(input_path)
+    np.save(save_path + '.npy', pres)
     plotter = Plotter(save_path + '.npy', materials, zoom=0.9) if plot else None
 
     start = time.time()
-    print('Optimization starting. Output will be saved in ' + save_path + '.npy')
-    print(f'Mesh={mesh["shape"]}, Filter={filter_params["filter"]}, '
-          f'FilterBC={filter_params["filter_bc"].upper()}, Rmin={filter_params["radius"]:0.3f}')
+    print('Optimization starting. Mesh={}, Filter={}, FilterBC={}, R={:0.3f}'.
+          format(mesh["shape"], *[fil[key] for key in ('filter', 'filter_bc', 'radius')]))
+    print(('{:<16}' * 5).format("It.", "X Change", "C Change", "Compliance", "Weight"))
 
-    optimizer = TopOpt(mesh, bc, filter_params, opt_params, materials, pres, mask,
+    optimizer = TopOpt(mesh, bc, fil, opt, materials, pres, mask,
                        lambda loop, x, x_ch, c_ch, c, w:
                        iter_print(loop, x, x_ch, c_ch, c, w, save_path, plotter))
     optimizer.optimize()
@@ -45,5 +43,5 @@ def single_run(input_path, save_path, plot=True):
     if plotter is not None: plotter.update(save_path + '.npy', title=title, interactive=False)
 
 
-single_run('input.xlsx', '3d')
+single_run('input_2d.xlsx', '2d', False)
 # save_data('runs/data', 'shear-concentrated-sm', cc, vv)

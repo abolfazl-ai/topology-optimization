@@ -13,12 +13,12 @@ def get_input(input_path):
 
 def read_options(input_path):
     options = pd.read_excel(input_path, sheet_name='Options')
-    nx, ny, nz, vf, penalty, max_it, x_conv, c_conv, move, ft, filter_bc, r, eta, beta = options['Value']
-    nx, ny, nz, penalty, max_it, ft, filter_bc = np.array((nx, ny, nz, penalty, max_it, ft, filter_bc), np.int32)
+    nx, ny, nz, vf, p, p_inc, max_it, x_conv, c_conv, move, ft, filter_bc, r, eta, beta = options['Value']
+    nx, ny, nz, p, max_it, ft, filter_bc = np.array((nx, ny, nz, p, max_it, ft, filter_bc), np.int32)
     filter_bc = ['constant', 'reflect', 'nearest', 'mirror', 'wrap'][filter_bc]
     mesh = mesh_model(nx, ny, nz)
     filter_params = {'filter': ft, 'filter_bc': filter_bc, 'radius': r, 'eta': eta, 'beta': beta}
-    opt_params = {'penalty': penalty, 'volume_fraction': vf, 'move': move,
+    opt_params = {'penalty': p, 'penalty_increase': p_inc, 'volume_fraction': vf, 'move': move,
                   'max_it': max_it, 'c_conv': c_conv, 'x_conv': x_conv}
     return mesh, filter_params, opt_params
 

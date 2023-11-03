@@ -37,8 +37,8 @@ class Plotter2D:
 
     def update(self, x, title, interactive):
         array = x.copy()
-        for i, d in enumerate(self.densities):
-            array[(x > ((self.densities[i - 1] + d) / 2 if i > 0 else d))] = d
+        # for i, d in enumerate(self.densities):
+        #     array[(x > ((self.densities[i - 1] + d) / 2 if i > 0 else d))] = d
         self.fig.canvas.restore_region(self.bg)
         self.im.set_array(array)
         if title is not None: self.ax.set_title(title)

@@ -69,6 +69,7 @@ class TopOpt:
                 abs(np.sqrt((self.c[-2] - self.c[-1]) ** 2 + (self.c[-3] - self.c[-2]) ** 2) / np.max(np.abs(self.c))),
                 np.linalg.norm(x_old - self.x) / np.sqrt(self.mesh['elem_num']))
             self.iter_callback(self.loop, x, self.x_change, self.c_change, c, w)
+            self.opt['penalty'] = self.opt['penalty'] + self.opt['penalty_increase']
 
 
 def ordered_simp(x, penalty, X, Y, flatten=False):

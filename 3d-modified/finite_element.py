@@ -9,14 +9,10 @@ class FEM:
         self.shape, self.dof, self.indexes = mesh['shape'], mesh['dof'], mesh['indexes']
         self.free, self.force = bc['free_dofs'], bc['force_vector']
         self.k, self.k_tri = Q4_stiffness() if mesh['dim'] == 2 else H8_stiffness()
-        self.elasticity = np.ones(self.shape)
         self.u = np.zeros(self.dof)
 
-    def update_stiffness(self, elasticity):
-        self.elasticity = elasticity
-
-    def solve(self):
-        ks = ((self.k_tri[np.newaxis]).T * self.elasticity).flatten(order='F')
+    def solve(self, elasticity):
+        ks = ((self.k_tri[np.newaxis]).T * elasticity).flatten(order='F')
         k = csc_matrix((ks, (self.indexes[0], self.indexes[1])),
                        shape=(self.dof, self.dof))[self.free, :][:, self.free].tocoo()
         u, b = np.zeros(self.dof), self.force[self.free]

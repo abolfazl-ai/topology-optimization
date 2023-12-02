@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 from TopOpt import TopOpt
 from read_input import get_input
-from plot import Plotter
+from plot import plotter
 
 
 def save_data(save_path, column_name, compliance, volume):
@@ -18,29 +18,29 @@ def save_data(save_path, column_name, compliance, volume):
 
 
 def iter_print(loop, x, x_ch, c_ch, c, w, save_path, plotter):
-    print(f'{loop:03}{"":13}{x_ch:<16.6f}{c_ch:<16.6f}{c:<16.4E}{100 * w:<0.2f}%')
+    print(f'{loop:03}' + ' ' * 13 + f'{x_ch:<16.6f}{c_ch:<16.6f}{c:<16.4E}{100 * w:<0.2f}%')
     np.save(save_path + '.npy', x)
-    if plotter is not None: plotter.update(save_path + '.npy', f'Iteration {loop:03}: C={c:0.4e}', True)
+    if plotter is not None: plotter.show(x, f'Iteration {loop:03}: C={c:0.4e}', True)
 
 
-def run(input_path, save_path, plot=True):
-    mesh, bc, filter_params, opt_params, materials, pres, mask = get_input(input_path)
-    np.save(save_path + '.npy', pres)
-    plotter = Plotter(save_path + '.npy', materials, zoom=0.9) if plot else None
+def single_run(input_path, save_path, plot=True):
+    mesh, bc, fil, opt, materials, pres, mask = get_input(input_path)
+    p = plotter(pres, materials) if plot else None
 
     start = time.time()
     print('Optimization starting. Mesh={}, Filter={}, FilterBC={}, R={:0.3f}'.
-          format(mesh["shape"], *[filter_params[key] for key in ('filter', 'filter_bc', 'radius')]))
-    print(('{:<16}' * 5).format("Iteration", "X Change", "C Change", "Compliance", "Weight"))
+          format(mesh["shape"], *[fil[key] for key in ('filter', 'filter_bc', 'radius')]))
+    print(('{:<16}' * 5).format("It.", "X Change", "C Change", "Compliance", "Weight"))
 
-    optimizer = TopOpt(mesh, bc, filter_params, opt_params, materials, pres, mask,
+    optimizer = TopOpt(mesh, bc, fil, opt, materials, pres, mask,
                        lambda loop, x, x_ch, c_ch, c, w:
-                       iter_print(loop, x, x_ch, c_ch, c, w, save_path, plotter))
+                       iter_print(loop, x, x_ch, c_ch, c, w, save_path, p))
     optimizer.optimize()
 
-    print(f'Model converged in {(time.time() - start):0.2f} seconds.')
-    if plotter is not None: plotter.update(save_path + '.npy', interactive=False)
+    title = f'Model converged in {(time.time() - start):0.2f} seconds.'
+    print(title)
+    if p is not None: p.show(title=title, interactive=False)
 
 
-run('input_3d.xlsx', '3d')
+single_run('input_3d.xlsx', '3d', True)
 # save_data('runs/data', 'shear-concentrated-sm', cc, vv)

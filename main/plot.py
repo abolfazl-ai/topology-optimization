@@ -86,7 +86,7 @@ class Plotter3D(Plotter):
         self.p.show(title=title, full_screen=False, window_size=(1100, 550), interactive_update=interactive)
 
     def _th(self, value):
-        if self.init:
+        if 'Density' in self.grid.point_data.keys():
             self.roi = self.grid.clip_scalar(value=value, scalars='Density', invert=False)
             if self.roi.points.size > 0:
                 self.p.subplot(0, 1)
@@ -104,7 +104,7 @@ class Plotter3D(Plotter):
         self.grid.cell_data['Density'] = self.x.flatten(order="F")
         self.grid.cell_data['Color'] = array.flatten(order="F")
         self.grid = self.grid.cell_data_to_point_data()
-        # self.grid = self.grid.gaussian_smooth(scalars='Color')
+        self.grid = self.grid.gaussian_smooth(scalars='Color')
         self.roi = self.grid.clip_scalar(value=self.threshold, scalars='Density', invert=False)
 
         if self.roi.points.size > 0:
@@ -130,7 +130,7 @@ def view(path, materials):
 
 if __name__ == '__main__':
     # mat = {'names': ['V', 'Solid'], 'colors': ['w', 'b'], 'D': [0, 1]}
-    # mat = {'names': ['V', 'TPU', 'ABS'], 'colors': ['w', 'r', 'b'], 'D': [0, 1, 0.85]}
+    mat = {'names': ['V', 'TPU', 'ABS'], 'colors': ['w', 'r', 'g'], 'D': [0, 1, 0.85]}
     # mat = {'names': ['V', 'PCL', 'PLA'], 'colors': ['w', 'r', 'b'], 'D': [0, 0.5, 1]}
-    mat = {'names': ['V', 'Solid'], 'colors': ['w', 'k'], 'D': [0, 1]}
-    view('2d.npy', mat, )
+    # mat = {'names': ['V', 'Solid'], 'colors': ['w', 'k'], 'D': [0, 1]}
+    view('runs/shear-concentrated.npy', mat, )

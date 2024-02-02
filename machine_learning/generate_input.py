@@ -1,15 +1,15 @@
 import numpy as np
 from cvxopt import matrix
 
-from main.read_input import mesh_model
+from read_input import mesh_model
 
 
-def generate_input(r, p, vol_fraction, boundary):
+def generate_input(r, p, vol_fraction, boundary, n):
     materials = {'names': ['Void', 'Solid'], 'colors': ['w', 'k'], 'D': [1e-9, 1], 'E': [1e-9, 1]}
-    mesh = mesh_model(400, 400, 0)
+    mesh = mesh_model(n, n, 0)
     filter_params = {'filter': 3, 'filter_bc': 'reflect', 'radius': r, 'eta': 0.2, 'beta': 2}
     opt_params = {'penalty': p, 'penalty_increase': 0.0, 'volume_fraction': vol_fraction, 'move': 0.2,
-                  'max_it': 200, 'c_conv': 0.0001, 'x_conv': 0.001}
+                  'max_it': 200, 'c_conv': 0.00001, 'x_conv': 0.0001}
     pres, mask = np.zeros(mesh['shape']), np.ones(mesh['shape'], dtype=bool)
 
     bc = gen_bc(mesh, boundary)

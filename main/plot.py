@@ -33,7 +33,8 @@ class Plotter2D(Plotter):
         super().__init__(x, materials)
         plt.ion()
         self.fig, self.ax = plt.subplots()
-        cmap = mc.LinearSegmentedColormap.from_list('mesh', list(zip(self.D, self.C)))
+        cmap = mc.ListedColormap(self.C)
+        # cmap = mc.LinearSegmentedColormap.from_list('mesh', list(zip(self.D, self.C)))
         custom_lines = [Line2D([0], [0], marker='o', label='Scatter',
                                lw=0, markerfacecolor=c, markersize=10) for c in self.C]
         self.im = self.ax.imshow(x, origin='lower', cmap=cmap, vmin=0, vmax=1, interpolation='nearest')

@@ -1,46 +1,16 @@
 import numpy as np
-import pandas as pd
 from cvxopt import matrix
+from inputs import *
 
 
-def get_input(input_path):
-    mesh, filter_params, opt_params = read_options(input_path)
-    pres, mask = read_pres(input_path, mesh)
-    b = [{'S': (0, 0, 0), 'E': (1, 1, 0), 'D': (0, 0, 0), 'F': 0},
-         {'S': (0, 0, 1), 'E': (1, 1, 1), 'D': (np.nan, np.nan, np.nan), 'F': lambda x, y, z: (0, 0, -1)}]
-         # {'S': (0, 0, 1), 'E': (1, 0, 1), 'D': (np.nan, np.nan, np.nan), 'F': lambda x, y, z: (0, 0, -1)},
-         # {'S': (0, 1, 1), 'E': (1, 1, 1), 'D': (np.nan, np.nan, np.nan), 'F': lambda x, y, z: (0, 0, 1)}]
-         # {'S': (0, 0, 1), 'E': (1, 1, 1), 'D': (np.nan, np.nan, np.nan), 'F': lambda x, y, z: (0, 0, 2 * (0.5 - x)**3)}]
-    bc = gen_bc(mesh, b)
-    # bc = read_bc(input_path, mesh)
-    materials = read_materials(input_path)
-    return mesh, bc, filter_params, opt_params, materials, pres, mask
+def get_input():
+    mesh = mesh_model()
+    bc = gen_bc(mesh, boundary_conditions)
+    pres, mask = read_pres(mesh)
+    return mesh, bc, filter_parameters, optimization_parameters, materials, pres, mask
 
 
-def read_options(input_path):
-    options = pd.read_excel(input_path, sheet_name='Options')
-    nx, ny, nz, vf, p, p_inc, max_it, x_conv, c_conv, move, ft, filter_bc, r, eta, beta = options['Value']
-    nx, ny, nz, p, max_it, ft, filter_bc = np.array((nx, ny, nz, p, max_it, ft, filter_bc), np.int32)
-    filter_bc = ['constant', 'reflect', 'nearest', 'mirror', 'wrap'][filter_bc]
-    mesh = mesh_model(nx, ny, nz)
-    filter_params = {'filter': ft, 'filter_bc': filter_bc, 'radius': r, 'eta': eta, 'beta': beta}
-    opt_params = {'penalty': p, 'penalty_increase': p_inc, 'volume_fraction': vf, 'move': move,
-                  'max_it': max_it, 'c_conv': c_conv, 'x_conv': x_conv}
-    return mesh, filter_params, opt_params
-
-
-def read_materials(input_path):
-    material_df = pd.read_excel(input_path, sheet_name='Materials')
-    D = material_df['Density'].tolist()
-    E = material_df['Elasticity'].tolist()
-    D[D == 0] = 1e-9
-    E[E == 0] = 1e-9
-    names = material_df['Material'].tolist()
-    colors = material_df['Color'].tolist()
-    return {'names': names, 'colors': colors, 'D': D, 'E': E}
-
-
-def mesh_model(nx, ny, nz):
+def mesh_model():
     shape, dim = ((nx, ny), 2) if nz == 0 else ((nx, ny, nz), 3)
     node_numbers = np.reshape(range(np.prod(np.array(shape) + 1)), np.array(shape) + 1, order='F')
     elem_num, dof = np.prod(shape), np.prod(np.array(shape) + 1) * dim
@@ -65,37 +35,19 @@ def mesh_model(nx, ny, nz):
             'elem_num': elem_num, 'indexes': (indexes[:, 0], indexes[:, 1]), 'c_mat': c_mat}
 
 
-def read_bc(input_path, mesh):
-    bc = pd.read_excel(input_path, sheet_name='BC')
-    fixed, dof = [], mesh['dim'] * np.prod(np.array(mesh['shape']) + 1)
-    force_vector = matrix(0.0, (dof, 1))
-    for _, row in bc.iterrows():
-        start, end = [[float(x) for x in row[s].split(',')][0:mesh['dim']] for s in ('StartPosition', 'EndPosition')]
-        displacement, force = [[row[s + ('X', 'Y', 'Z')[i]] for i in range(mesh['dim'])] for s in ('Dis', 'Force')]
-        nr = [(int(np.floor(s * n)), int(np.floor(e * n)) + 1) for n, s, e in list(zip(mesh['shape'], start, end))]
-        nodes = (mesh['node_numbers'][nr[1][0]:nr[1][1], nr[0][0]:nr[0][1]] if mesh['dim'] == 2 else
-                 mesh['node_numbers'][nr[1][0]:nr[1][1], nr[2][0]:nr[2][1], nr[0][0]:nr[0][1]]).flatten()
-        for i, (d, f) in enumerate(zip(displacement, force)):
-            force_vector[(mesh['dim'] * nodes + i).tolist(), 0] = matrix(0 if np.isnan(f) else f, (nodes.size, 1))
-            fixed.extend([] if np.isnan(d) else (mesh['dim'] * nodes + i).tolist())
-    free = np.setdiff1d(np.arange(0, dof), fixed).tolist()
-    return {'free_dofs': free, 'force_vector': force_vector}
-
-
-def read_pres(input_path, mesh):
-    preserved = pd.read_excel(input_path, sheet_name='PreservedVolume')
+def read_pres(mesh):
     pres, mask = np.zeros(mesh['shape']), np.ones(mesh['shape'], dtype=bool)
-    for _, row in preserved.iterrows():
-        start, end = ([float(x) for x in row['StartPosition'].split(',')],
-                      [float(x) for x in row['EndPosition'].split(',')])
+    for row in preserved_regions:
+        start, end = ([float(x) for x in row['S'].split(',')],
+                      [float(x) for x in row['E'].split(',')])
         nr = [(int(max(min(np.floor(s * n), np.floor(e * n) - 1), 0)), int(np.floor(e * n)) + 1)
               for n, s, e in list(zip(mesh['shape'], start, end))]
         if mesh['dim'] == 3:
             mask[nr[1][0]:nr[1][1], nr[2][0]:nr[2][1], nr[0][0]:nr[0][1]] = False
-            pres[nr[1][0]:nr[1][1], nr[2][0]:nr[2][1], nr[0][0]:nr[0][1]] = row['Density']
+            pres[nr[1][0]:nr[1][1], nr[2][0]:nr[2][1], nr[0][0]:nr[0][1]] = row['D']
         else:
             mask[nr[1][0]:nr[1][1], nr[0][0]:nr[0][1]] = False
-            pres[nr[1][0]:nr[1][1], nr[0][0]:nr[0][1]] = row['Density']
+            pres[nr[1][0]:nr[1][1], nr[0][0]:nr[0][1]] = row['D']
     return pres, mask
 
 
@@ -107,11 +59,11 @@ def gen_bc(mesh, bc):
         nr = [(int(np.floor(s * n)), int(np.floor(e * n)) + 1) for n, s, e in list(zip(mesh['shape'], start, end))]
         nodes = (mesh['node_numbers'][nr[1][0]:nr[1][1], nr[0][0]:nr[0][1]] if mesh['dim'] == 2 else
                  mesh['node_numbers'][nr[1][0]:nr[1][1], nr[2][0]:nr[2][1], nr[0][0]:nr[0][1]]).flatten()
-        for i, d in enumerate(displacement):
+        for i in range(len(mesh['shape'])):
             if force != 0:
                 for node in nodes:
-                    y, x, z = np.argwhere(mesh['node_numbers'] == node)[0] / mesh['shape']
-                    force_vector[(mesh['dim'] * node + i).tolist(), 0] = force(x, y, z)[i]
-            fixed.extend([] if np.isnan(d) else (mesh['dim'] * nodes + i).tolist())
+                    coordinates = np.argwhere(mesh['node_numbers'] == node)[0] / mesh['shape']
+                    force_vector[(mesh['dim'] * node + i).tolist(), 0] = force(*coordinates)[i]
+            fixed.extend([] if np.isnan(displacement[i]) else (mesh['dim'] * nodes + i).tolist())
     free = np.setdiff1d(np.arange(0, dof), fixed).tolist()
     return {'free_dofs': free, 'force_vector': force_vector}

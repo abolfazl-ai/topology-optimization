@@ -56,7 +56,7 @@ class TopOpt:
         return x_new
 
     def optimize(self):
-        while (self.c_change > self.opt['c_conv'] and
+        while (self.c_change > self.opt['o_conv'] and
                self.x_change > self.opt['x_conv'] and
                self.loop < self.opt['max_it']):
             self.loop += 1

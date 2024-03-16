@@ -23,8 +23,8 @@ def iter_print(loop, x, x_ch, c_ch, c, w, save_path, plotter):
     if plotter is not None: plotter.show(x, f'Iteration {loop:03}: C={c:0.4e}', True)
 
 
-def single_run(input_path, save_path, plot=True):
-    mesh, bc, fil, opt, materials, pres, mask = get_input(input_path)
+def single_run(save_path, plot=True):
+    mesh, bc, fil, opt, materials, pres, mask = get_input()
     p = plotter(pres, materials) if plot else None
 
     start = time.time()
@@ -42,5 +42,5 @@ def single_run(input_path, save_path, plot=True):
     if p is not None: p.show(title=title, interactive=False)
 
 
-single_run('input_3d.xlsx', '3d', True)
+single_run('3d', True)
 # save_data('runs/data', 'shear-concentrated-sm', cc, vv)
